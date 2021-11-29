@@ -1,0 +1,5 @@
+,Cluster 0 Prediction,Cluster 1 Prediction,True
+Metabolite 0,0.9999999,1.0523979e-07,1
+Metabolite 1,0.9999999,1.0523999e-07,1
+Metabolite 2,0.9999999,1.05240595e-07,0
+Metabolite 3,1.0510579e-07,0.9999999,1
