@@ -27,10 +27,10 @@ def plot_syn_data(path, x, y, gen_w, gen_z, gen_bug_locs, gen_met_locs,
         ax[0].set_title('Microbes')
         # for ii in ix:
         bins = int((x.max() - x.min()) / 5)
-        if bins<=1:
+        if bins<=10:
             bins = 10
         ax2[0].hist(x[:, ix].flatten(), range=(x.min(), x.max()), label='Cluster ' + str(i), alpha=0.5, bins = bins)
-        ax2[0].set_xlabel('Microbial counts')
+        ax2[0].set_xlabel('Microbial relative abundances')
         ax2[0].set_ylabel('# Microbes in Cluster x\n# Samples Per Microbe', fontsize = 10)
         ax2[0].set_title('Microbes')
         ax[0].set_aspect('equal')
@@ -48,7 +48,7 @@ def plot_syn_data(path, x, y, gen_w, gen_z, gen_bug_locs, gen_met_locs,
                              alpha=0.2, color=p2.get_facecolor().squeeze(), label = 'Cluster ' + str(i))
         ax[1].add_patch(circle2)
         bins = int((y.max() - y.min())/5)
-        if bins<=1:
+        if bins<=10:
             bins = 10
         ax2[1].hist(y[:, ix].flatten(), range=(y.min(), y.max()),
                     label='Cluster ' + str(i), alpha=0.5, bins = bins)
@@ -65,23 +65,43 @@ def plot_syn_data(path, x, y, gen_w, gen_z, gen_bug_locs, gen_met_locs,
     plt.close(fig)
     plt.close(fig2)
 
-def plot_distribution(dist, param, ptype = 'init', **kwargs):
-    plt.figure()
+def plot_distribution(dist, param, ptype = 'init', path = '', **kwargs):
     if 'r' in param:
         vals = 1/dist.sample([500])
         mean = 1/np.round(dist.mean.item(),2)
         std = 1/np.round(dist.stddev.item(),2)
     else:
         vals = dist.sample([500])
-        mean = np.round(dist.mean.item(),2)
-        std = np.round(dist.stddev.item(),2)
-    bins = int((vals.max() - vals.min()) / 5)
-    if bins<=1:
-        bins = 10
-    plt.hist(vals, bins = bins)
-    plt.title(param + ', mean=' + str(mean) + ', std=' + str(std))
+        try:
+            mean = np.round(dist.mean.item(),2)
+            std = np.round(dist.stddev.item(),2)
+        except:
+            mean, std = 'NA','NA'
+    if len(vals.shape)>1:
+        fig, ax = plt.subplots(vals.shape[1], figsize = (5, 4*vals.shape[1]))
+        for i in np.arange(vals.shape[1]):
+            bins = int((vals[:,i].max() - vals[:,i].min()) / 5)
+            if bins <= 1:
+                bins = 10
+            ax[i].hist(vals[:,i], bins=bins)
+            ax[i].set_title(param + ', mean=' + str(mean) + ', std=' + str(std))
+            ax[i].set_xlabel('x')
+            ax[i].set_ylabel('F(x)')
+    else:
+        fig, ax = plt.subplots()
+        bins = int((vals.max() - vals.min()) / 5)
+        if bins<=1:
+            bins = 10
+        ax.hist(vals, bins = bins)
+        ax.set_title(param + ', mean=' + str(mean) + ', std=' + str(std))
+        ax.set_xlabel('x')
+        ax.set_ylabel('y')
     r = [k + '_' + str(np.round(item,2)).replace('.','d') for k, item in kwargs.items()]
-    plt.savefig(ptype + 's/' + param + '-' + '-'.join(r))
+    if not os.path.isdir(path + '/' + ptype + 's/'):
+        os.mkdir(path + '/' + ptype + 's/')
+    plt.tight_layout()
+    plt.savefig(path + '/' + ptype + 's/' + param + '-' + '-'.join(r))
+    plt.close(fig)
 
 def plot_param_traces(path, param_dict, params2learn, true_vals, net, fold):
     fig_dict, ax_dict = {},{}
@@ -119,6 +139,64 @@ def plot_param_traces(path, param_dict, params2learn, true_vals, net, fold):
             fig_dict[name].savefig(path + 'fold' + str(fold) + '_' + name + '_parameter_trace.pdf')
             plt.close(fig_dict[name])
 
+def plot_training_output(path, loss, out_vec, targets, gen_z, gen_w, param_dict, fig_dict2, ax_dict2, fig_dict3, ax_dict3, fold):
+    best_mod = np.argmin(loss)
+    preds = out_vec[best_mod]
+    total = np.concatenate([targets, preds.detach().numpy()])
+
+    pred_z = param_dict['z'][best_mod]
+    df_dict= {}
+    for col in np.arange(pred_z.shape[1]):
+        df_dict['Cluster ' + str(col) + ' Prediction'] = pred_z[:,col]
+    df_dict['True'] = np.where(gen_z==1)[1]
+    index_names = ['Metabolite ' + str(i) for i in np.arange(gen_z.shape[0])]
+    df = pd.DataFrame(df_dict, index = index_names)
+    df.to_csv(path + 'fold' + str(fold) + '_metab_cluster_fit.csv')
+
+    pred_w = param_dict['w'][best_mod]
+    df_dict= {}
+    for col in np.arange(pred_w.shape[1]):
+        df_dict['Cluster ' + str(col) + ' Prediction'] = pred_w[:,col]
+    df_dict['True'] = np.where(gen_w==1)[1]
+    index_names = ['Microbe ' + str(i) for i in np.arange(gen_w.shape[0])]
+    df = pd.DataFrame(df_dict, index = index_names)
+    df.to_csv(path + 'fold' + str(fold) + '_bug_cluster_fit.csv')
+
+    for met in range(targets.shape[1]):
+        cluster_id = np.where(gen_z[met, :] == 1)[0]
+        range_ratio = (preds[:, met].max() - preds[:, met].min()) / (total.max() - total.min())
+        bins = int((total.max() - total.min())/5)
+        if bins<10:
+            bins = 10
+        ax_dict2[fold][met].hist(preds[:, met].detach().numpy(), range=(total.min(), total.max()), label='guess',
+                                 alpha=0.5, bins = bins)
+        ax_dict2[fold][met].hist(targets[:, met], range=(total.min(), total.max()),
+                                 label='true', alpha=0.5, bins = bins)
+        ax_dict2[fold][met].set_title('Metabolite ' + str(met) + ', Cluster ' + str(cluster_id))
+        ax_dict2[fold][met].legend()
+        ax_dict2[fold][met].set_xlabel('Metabolite Levels')
+        ax_dict2[fold][met].set_ylabel('# Samples Per Metabolite')
+    fig_dict2[fold].tight_layout()
+    fig_dict2[fold].savefig(path + 'fold' + str(fold) + '_training_histograms.pdf')
+    plt.close(fig_dict2[fold])
+
+    for cluster in range(gen_z.shape[1]):
+        met_ids = np.where(gen_z[:, cluster] == 1)[0]
+        range_ratio = (preds[:, met_ids].max() - preds[:, met_ids].min()) / (total.max() - total.min())
+        bins = int((total.max() - total.min()) / 5)
+        if bins<10:
+            bins = 10
+        ax_dict3[fold][cluster].hist(preds[:, met_ids].flatten().detach().numpy(), range=(total.min(), total.max()),
+                                     label='guess', alpha=0.5, bins = bins)
+        ax_dict3[fold][cluster].hist(targets[:, met_ids].flatten(), range=(total.min(), total.max()), label='true',
+                                     alpha=0.5, bins = bins)
+        ax_dict3[fold][cluster].set_title('Cluster ' + str(cluster))
+        ax_dict3[fold][cluster].legend()
+        ax_dict3[fold][cluster].set_xlabel('Metabolite Levels')
+        ax_dict3[fold][cluster].set_ylabel('# Metabolites in Cluster x\n# Samples Per Metabolite')
+    fig_dict3[fold].tight_layout()
+    fig_dict3[fold].savefig(path + 'fold' + str(fold) + '_training_cluster_histograms.pdf')
+    plt.close(fig_dict3[fold])
 
 def plot_output(path, test_loss, test_out_vec, test_targets, gen_z, gen_w, param_dict, fig_dict2, ax_dict2, fig_dict3, ax_dict3, fold):
     best_mod = np.argmin(test_loss)
@@ -145,7 +223,10 @@ def plot_output(path, test_loss, test_out_vec, test_targets, gen_z, gen_w, param
 
     for met in range(test_targets.shape[1]):
         cluster_id = np.where(gen_z[met, :] == 1)[0]
+        range_ratio = (preds[:, met].max() - preds[:, met].min()) / (total.max() - total.min())
         bins = int((total.max() - total.min())/5)
+        if bins<10:
+            bins = 10
         ax_dict2[fold][met].hist(preds[:, met].detach().numpy(), range=(total.min(), total.max()), label='guess',
                                  alpha=0.5, bins = bins)
         ax_dict2[fold][met].hist(test_targets[:, met], range=(total.min(), total.max()),
@@ -156,10 +237,14 @@ def plot_output(path, test_loss, test_out_vec, test_targets, gen_z, gen_w, param
         ax_dict2[fold][met].set_ylabel('# Samples Per Metabolite')
     fig_dict2[fold].tight_layout()
     fig_dict2[fold].savefig(path + 'fold' + str(fold) + '_output_histograms.pdf')
+    plt.close(fig_dict2[fold])
 
     for cluster in range(gen_z.shape[1]):
         met_ids = np.where(gen_z[:, cluster] == 1)[0]
+        range_ratio = (preds[:, met_ids].max() - preds[:, met_ids].min()) / (total.max() - total.min())
         bins = int((total.max() - total.min()) / 5)
+        if bins<10:
+            bins = 10
         ax_dict3[fold][cluster].hist(preds[:, met_ids].flatten().detach().numpy(), range=(total.min(), total.max()),
                                      label='guess', alpha=0.5, bins = bins)
         ax_dict3[fold][cluster].hist(test_targets[:, met_ids].flatten(), range=(total.min(), total.max()), label='true',

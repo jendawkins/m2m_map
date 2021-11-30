@@ -2,3 +2,4 @@ kegg/
 __pycache__/
 *.ipynb
 *.pdf
+*.png

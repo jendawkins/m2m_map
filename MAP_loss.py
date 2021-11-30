@@ -16,7 +16,7 @@ import time
 import numpy as np
 
 class MAPloss():
-    def __init__(self,net, meas_var=1000,
+    def __init__(self,net, meas_var=4,
                  compute_loss_for = ['alpha','beta','w','z','mu_bug','r_bug','pi_bug','mu_met','r_met','pi_met']):
         self.net = net
         self.meas_var = meas_var

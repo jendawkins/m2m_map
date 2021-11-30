@@ -61,4 +61,11 @@ class Concrete():
         tot = ((self.loc*x.pow(-self.tau-1))/(self.loc*x.pow(-self.tau)).sum(0)).prod(0)
         return C*tot
 
-
+# class Conc_MVN():
+#     def __init__(self, locC, tauC, locMVN, varMVN):
+#         self.locC = locC
+#         self.tauC = tauC
+#         self.locMVN = locMVN
+#         self.varMVN = varMVN
+#
+#     def sample(self, size = [1]):
