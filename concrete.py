@@ -61,11 +61,22 @@ class Concrete():
         tot = ((self.loc*x.pow(-self.tau-1))/(self.loc*x.pow(-self.tau)).sum(0)).prod(0)
         return C*tot
 
-# class Conc_MVN():
-#     def __init__(self, locC, tauC, locMVN, varMVN):
-#         self.locC = locC
-#         self.tauC = tauC
-#         self.locMVN = locMVN
-#         self.varMVN = varMVN
-#
-#     def sample(self, size = [1]):
+class MultDist():
+    def __init__(self, concrete_dist, mvn, zw):
+        self.concrete = concrete_dist
+        self.mvn = mvn
+
+    def pdf(self, zw, a):
+        first = self.concrete.pdf(zw)
+        second = [first*(zw[j,:]@self.mvn.pdf(a[j,:])) for j in range(zw.shape[0])]
+        return torch.prod(second)
+
+    def sample(self, size = [1]):
+        zw_samples = self.concrete.sample(size = [100])
+        a_samples = self.mvn.sample(size = [100])
+        feature_table = np.zeros((100,100))
+        prob_table = np.zeros((100,100))
+        for i in range(len(zw_samples)):
+            for j in range(len(a_samples)):
+                feature_table[i,j] = (zw_samples[i], a_samples[j])
+                prob_table[i,j] = self.pdf(zw_samples[i], a_samples[j])
