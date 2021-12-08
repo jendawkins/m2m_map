@@ -53,7 +53,7 @@ echo $TMPDIR
 
 # Add your job command here
 
-cd /PHShome/jjd65/M2M_CodeBase
+cd /PHShome/jjd65/m2m_map
 
 python3 ./main_MAP.py -learn {0} -priors {1} -case {2} -N_met {3} -N_bug {4} -N_nuisance {5} -L {6} -K {7}
 '''
