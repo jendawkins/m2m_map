@@ -3,3 +3,8 @@ __pycache__/
 *.ipynb
 *.pdf
 *.png
+z_distribution/
+test/
+random_locs/
+results_ML/
+results_MAP/learn*

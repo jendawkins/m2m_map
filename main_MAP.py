@@ -22,13 +22,14 @@ import argparse
 
 class Model(nn.Module):
     def __init__(self, met_locs, microbe_locs, temp_grouper = 10, temp_selector = 1, L = 2, K = 2, beta_var = 16.,
-                 seed = 0, tau_transformer = 1):
+                 seed = 0, tau_transformer = 1, meas_var = 0.1):
         super(Model, self).__init__()
         self.L = L
         self.K = K
         self.beta_var = beta_var
         self.mu_var_met = (2/met_locs.shape[1])*np.sum(np.var(met_locs.T))
         self.mu_var_bug = (2/microbe_locs.shape[1])*np.sum(np.var(microbe_locs.T))
+        self.meas_var = meas_var
         if isinstance(temp_grouper, str):
             self.temp_grouper = 1
         else:
@@ -140,13 +141,18 @@ class Model(nn.Module):
         self.z_act = torch.softmax(self.z / self.tau_transformer, 1)
         self.z_act = torch.clamp(self.z_act, min=1e-10, max=1-1e-7)
         out_clusters = self.beta[0,:] + torch.matmul(g, self.beta[1:,:]*self.alpha_act)
-        out = torch.matmul(out_clusters, self.z_act.T)
+        out = torch.matmul(out_clusters + self.meas_var*torch.randn(out_clusters.shape), self.z_act.T)
         return out_clusters, out
 
 
 # Make X clusters distinct as possible
 def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clusters = 2, N_bug_clusters = 2, state = 1,
                             beta_var = 2, cluster_disparity = 50, case = 'Case 1', num_nuisance=2):
+    if case == 'Case 5':
+        cluster_disparity = 10
+        var = 10
+    else:
+        var = 1
     np.random.seed(state)
     choose_from = np.arange(N_met)
     met_gp_ids = []
@@ -210,28 +216,34 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
         np.arange(1, np.int(N_bug_clusters * cluster_disparity * 2) + 1, cluster_disparity), N_bug_clusters,
         replace=False)
     if N_bug_clusters==2 and N_met_clusters==2:
-        betas = np.array([[0,0],[0,-2],[3,0]])
+        betas = np.array([[0,0],[0,3],[3,0]])
         alphas = np.array([[0, 1], [1, 0]])
         cluster_means = [10,100]
+        if case=='Case 5':
+            cluster_means = [20, 30]
     X = np.zeros((N_samples, N_bug))
 
     if case == 'Case 2':
         w_gen = np.hstack((w_gen, np.zeros((w_gen.shape[0], 1))))
         N = int(num_nuisance/N_bug_clusters)
-    for i in range(N_bug_clusters):
-        ixs = np.where(w_gen[:,i]==1)[0]
-        if case == 'Case 2':
-            s = np.random.choice(ixs, N)
-            X[:, s] = st.poisson(np.mean(cluster_means)).rvs(size = (N_samples, N))
-            ixs = np.array(list(set(ixs) - set(s)))
-            w_gen[s,:] = [0,0,1]
-        X[:, ixs] = st.poisson(cluster_means[i]).rvs(size = (N_samples, len(ixs)))
+    if case == 'Case 6':
+        for i in range(N_bug):
+            X[:, i] = st.poisson(i*cluster_disparity).rvs(size=(N_samples))
+    else:
+        for i in range(N_bug_clusters):
+            ixs = np.where(w_gen[:,i]==1)[0]
+            if case == 'Case 2':
+                s = np.random.choice(ixs, N)
+                X[:, s] = st.poisson(np.mean(cluster_means)).rvs(size = (N_samples, N))
+                ixs = np.array(list(set(ixs) - set(s)))
+                w_gen[s,:] = [0,0,1]
+            X[:, ixs] = st.poisson(cluster_means[i]).rvs(size = (N_samples, len(ixs)))
     X = X/np.expand_dims(np.sum(X, 1),1)
     if case == 'Case 2':
         g = X@w_gen[:,:-1]
     else:
         g = X@w_gen
-    y = (betas[0,:] + g@(betas[1:,:]*alphas))@z_gen.T + np.random.normal(0,1)
+    y = (betas[0,:] + g@(betas[1:,:]*alphas))@z_gen.T + var*np.random.normal(0,1)
     return X, y, betas, alphas, w_gen, z_gen, bug_locs, met_locs, kmeans_bug, kmeans_met
 
 if __name__ == "__main__":
@@ -239,32 +251,55 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-learn", "--learn", help="params to learn", type=str, nargs='+')
     parser.add_argument("-priors", "--priors", help="priors to set", type=str, nargs='+')
-    parser.add_argument("-case", "--case", help="case", type=str)
+    parser.add_argument("-case", "--case", help="case", type=int)
+    parser.add_argument("-N_met", "--N_met", help="N_met", type=int)
+    parser.add_argument("-N_bug", "--N_bug", help="N_bug", type=int)
+    parser.add_argument("-L", "--L", help="bug clusters", type=int)
+    parser.add_argument("-K", "--K", help="metab clusters", type=int)
+    parser.add_argument("-N_nuisance", "--N_nuisance", help="N_nuisance", type=int)
     args = parser.parse_args()
     # ['z','w','alpha','beta','mu_bug','mu_met','r_bug','r_met','pi_bug','pi_met']
     # 'z' 'w' 'alpha' 'beta' 'mu_bug' 'mu_met' 'r_bug' 'r_met' 'pi_bug' 'pi_met'
+    if args.L is not None and args.K is not None:
+        L, K = args.L, args.K
+    else:
+        L, K = 2,2
     if args.learn is not None:
         params2learn = args.learn
     if args.priors is not None:
+        if 'none' in args.priors:
+            args.priors = []
         priors2set = args.priors
     else:
         priors2set = []
     if args.learn is None and args.priors is None:
         params2learn = ['all']
-        priors2set = []
-
-    N_met = 20
-    N_bug = 20
-    n_nuisance = 0
+        priors2set = ['all']
 
     if args.case is not None:
-        case = args.case
+        case = 'Case ' + str(args.case)
     else:
-        case = 'Case 2'
+        case = 'Case 1'
+
+    if args.N_met is not None:
+        N_met = args.N_met
+    else:
+        N_met = 6
+    if args.N_bug is not None:
+        N_bug = args.N_bug
+    else:
+        N_bug = 5
+    if args.N_nuisance is None:
+        if case != 'Case 2':
+            n_nuisance = 0
+        else:
+            n_nuisance = 6
+    else:
+        n_nuisance = args.N_nuisance
 
     n_splits = 2
     use_MAP = True
-    meas_var = 4
+    meas_var = 1
     lr = 0.001
     temp_grouper, temp_selector = 'scheduled', 'scheduled'
     temp_transformer = 0.1
@@ -279,7 +314,7 @@ if __name__ == "__main__":
     if not os.path.isdir(path):
         os.mkdir(path)
 
-    path = path + '/N_bug' + str(N_bug) + '-N_met' + str(N_met) + '-N_nuisance' + str(n_nuisance) + '/'
+    path = path + '/N_bug' + str(N_bug) + '-N_met' + str(N_met) + '-N_nuisance' + str(n_nuisance) +  '-L' + str(args.L) + '-K' + str(args.K) +'/'
     if not os.path.isdir(path):
         os.mkdir(path)
     path = path + '/learn_' + '_'.join(params2learn) + '-priors_' + '_'.join(priors2set) + '-' + info + '/'
@@ -289,7 +324,7 @@ if __name__ == "__main__":
     if 'all' in priors2set:
         priors2set = ['z','w','alpha','beta','mu_bug','mu_met','r_bug','r_met','pi_bug','pi_met']
     x, y, gen_beta, gen_alpha, gen_w, gen_z, gen_bug_locs, gen_met_locs, kmeans_bug, kmeans_met = generate_synthetic_data(
-        case=case, N_met = N_met, N_bug = N_bug, num_nuisance=n_nuisance)
+        case=case, N_met = N_met, N_bug = N_bug, num_nuisance=n_nuisance, N_met_clusters = K, N_bug_clusters = L)
 
     r_bug = [np.max([np.sqrt(np.sum((kmeans_bug.cluster_centers_[i,:] - l)**2)) for l in gen_bug_locs[gen_w[:,i]==1,:]]) for i in
              range(kmeans_bug.cluster_centers_.shape[0])]
@@ -380,8 +415,6 @@ if __name__ == "__main__":
         tau_vec = []
         alpha_tau_vec = []
         lowest_loss_vec = []
-        w_grad = []
-        z_grad = []
         for epoch in range(iterations):
             if isinstance(temp_grouper, str) and ('z' in params2learn or 'w' in params2learn or 'all' in params2learn):
                 if epoch%200==0 and epoch>400 and net.temp_grouper > 1e-20:
@@ -413,8 +446,6 @@ if __name__ == "__main__":
             loss_vec.append(loss.item())
             timer.append(time.time()-start)
             loss.backward()
-            w_grad.append(net.w.grad.detach().numpy())
-            z_grad.append(net.z.grad.detach().numpy())
             optimizer.step()
             for name, parameter in net.named_parameters():
                 if name == 'w' or name == 'z' or name == 'alpha':
@@ -440,7 +471,7 @@ if __name__ == "__main__":
                 #                 fig_dict2, ax_dict2, fig_dict3,ax_dict3, fold, type = 'test')
                 plot_output(path, loss_vec, train_out_vec, targets, gen_z, gen_w, param_dict[fold],
                                      fig_dict4, ax_dict4, fig_dict5, ax_dict5, fold, type = 'train')
-                plot_output_locations(path, net, loss_vec, param_dict[fold])
+                plot_output_locations(path, net, loss_vec, param_dict[fold], fold)
 
                 # loss_vec.append(running_loss/10)
                 # running_loss = 0

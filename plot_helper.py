@@ -17,7 +17,7 @@ def plot_syn_data(path, x, y, gen_w, gen_z, gen_bug_locs, gen_met_locs,
                   mu_bug, r_bug, mu_met, r_met):
     fig, ax = plt.subplots(1, 2, figsize = (10,5))
     fig2, ax2 = plt.subplots(2, 1)
-    for i in range(mu_bug.shape[1]):
+    for i in range(mu_bug.shape[0]):
         ix = np.where(gen_w[:, i] == 1)[0]
         p1 = ax[0].scatter(gen_bug_locs[ix, 0], gen_bug_locs[ix, 1])
         circle1 = plt.Circle((mu_bug[i,0], mu_bug[i,1]), r_bug[i],
@@ -36,7 +36,7 @@ def plot_syn_data(path, x, y, gen_w, gen_z, gen_bug_locs, gen_met_locs,
         ax2[0].set_title('Microbes')
         ax[0].set_aspect('equal')
 
-    if gen_w.shape[1] > mu_bug.shape[1]:
+    if gen_w.shape[1] > mu_bug.shape[0]:
         ix_extra = np.where(gen_w[:,-1]==1)[0]
         p1 = ax[0].scatter(gen_bug_locs[ix_extra, 0], gen_bug_locs[ix_extra, 1], label = 'Non-contributing taxa')
         ax2[0].hist(x[:, ix_extra].flatten(), range=(x.min(), x.max()), label='Extraneous Taxa', alpha=0.5, bins = bins)
@@ -181,7 +181,7 @@ def plot_param_traces(path, param_dict, params2learn, true_vals, net, fold):
             fig_dict[name].savefig(path + 'fold' + str(fold) + '_' + name + '_parameter_trace.pdf')
             plt.close(fig_dict[name])
 
-def plot_output_locations(path, net, loss, param_dict):
+def plot_output_locations(path, net, loss, param_dict, fold):
     fig, ax = plt.subplots(1,2, figsize = (10,5))
 
     best_mod = np.argmin(loss)
@@ -212,9 +212,8 @@ def plot_output_locations(path, net, loss, param_dict):
         ax[1].add_patch(circle2)
 
     fig.tight_layout()
-    fig.savefig(path + 'predicted_cluster_centers.pdf')
+    fig.savefig(path + 'fold' + str(fold) + '-predicted_cluster_centers.pdf')
     plt.close(fig)
-
 
 def plot_output(path, loss, out_vec, targets, gen_z, gen_w, param_dict, fig_dict2, ax_dict2,
                 fig_dict3, ax_dict3, fold, type = 'unknown'):

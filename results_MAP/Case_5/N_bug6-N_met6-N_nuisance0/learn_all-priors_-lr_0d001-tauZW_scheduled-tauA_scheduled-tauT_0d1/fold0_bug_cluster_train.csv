@@ -1,0 +1,7 @@
+,Cluster 0 Prediction,Cluster 1 Prediction,True
+Microbe 0,0.0,1.0,1
+Microbe 1,0.0,1.0,0
+Microbe 2,0.0,1.0,1
+Microbe 3,0.0,1.0,1
+Microbe 4,0.559,0.441,0
+Microbe 5,0.488,0.512,0

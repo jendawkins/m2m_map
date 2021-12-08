@@ -14,6 +14,7 @@ from torch.distributions.normal import Normal
 import torch.nn as nn
 import time
 import numpy as np
+from concrete import *
 
 class MAPloss():
     def __init__(self,net, meas_var=1,
@@ -51,7 +52,19 @@ class MAPloss():
         temp_dist = self.net.distributions['beta']
         self.loss_dict['beta'] = -temp_dist.log_prob(self.net.beta).sum()
 
+
     def w_loss(self):
+        # start = time.time()
+        mvn = [MultivariateNormal(self.net.mu_bug[k,:], (torch.eye(self.net.mu_bug.shape[1]) *
+                                                               torch.exp(self.net.r_bug[k])).float()) for k in np.arange(self.net.mu_bug.shape[0])]
+        con = Concrete(self.net.pi_bug, self.net.temp_grouper)
+        multi = MultDist(con, mvn)
+        log_probs = torch.stack([-torch.log(multi.pdf(self.net.w_act[m,:], torch.Tensor(self.net.microbe_locs[m,:])))
+                                 for m in np.arange(self.net.microbe_locs.shape[0])]).sum()
+        self.loss_dict['w'] = log_probs
+        # print('Loss Method 2:' + str(time.time() - start))
+
+    def w_loss2(self):
         temp_dist = [MultivariateNormal(self.net.mu_bug[k,:], (torch.eye(self.net.mu_bug.shape[1]) *
                                                                torch.exp(self.net.r_bug[k])).float()) for k in np.arange(self.net.mu_bug.shape[0])]
 
@@ -60,12 +73,12 @@ class MAPloss():
         if probs.shape[1]< self.net.w_act.shape[1]:
             probs = torch.cat((probs, np.median(probs)*torch.ones((probs.shape[0], 1))), 1)
         probs[probs<1e-44] = 1e-44
-        self.loss_dict['w'] = self.net.temp_grouper*(torch.stack([(-torch.log(torch.softmax(self.net.pi_bug,1)) +
+        self.loss_dict['w'] = torch.stack([(-torch.log(torch.softmax(self.net.pi_bug,1)) +
                                                                    (self.net.temp_grouper + 1) * torch.log(self.net.w_act[m, :]) +
                                        torch.log((torch.softmax(self.net.pi_bug,1) *
                                                   (self.net.w_act[m, :].pow(-self.net.temp_grouper))).sum())).sum() -
                                       torch.log(torch.matmul(self.net.w_act[m, :],probs[m,:]))
-                                      for m in np.arange(self.net.microbe_locs.shape[0])]).sum(0))
+                                      for m in np.arange(self.net.microbe_locs.shape[0])]).sum(0)
     def mu_bug_loss(self):
         temp_dist = self.net.distributions['mu_bug']
         self.loss_dict['mu_bug'] = -temp_dist.log_prob(self.net.mu_bug).sum()
@@ -82,18 +95,30 @@ class MAPloss():
         self.loss_dict['pi_bug'] = (torch.Tensor(1 - np.array(self.net.params['pi_bug']['epsilon'])) * torch.softmax(self.net.pi_bug,1)).sum()
 
     def z_loss(self):
+        # start = time.time()
+        mvn = [MultivariateNormal(self.net.mu_met[k,:], (torch.eye(self.net.mu_met.shape[1]) *
+                                                               torch.exp(self.net.r_met[k])).float()) for k in np.arange(self.net.mu_met.shape[0])]
+        con = Concrete(self.net.pi_met, self.net.temp_grouper)
+        multi = MultDist(con, mvn)
+        log_probs = torch.stack([-torch.log(multi.pdf(self.net.z_act[m,:], torch.Tensor(self.net.met_locs[m,:])))
+                                 for m in np.arange(self.net.met_locs.shape[0])]).sum()
+        self.loss_dict['z'] = log_probs
+
+    def z_loss2(self):
+        # start = time.time()
         temp_dist = [MultivariateNormal(self.net.mu_met[k,:], (torch.eye(self.net.mu_met.shape[1]) *
                                                                torch.exp(self.net.r_met[k])).float()) for k in np.arange(self.net.mu_met.shape[0])]
 
         probs = torch.stack([torch.exp(torch.stack([temp_dist[k].log_prob(torch.FloatTensor(self.net.met_locs[m, :])) for
                                         k in np.arange(self.net.mu_met.shape[0])])) for m in np.arange(self.net.met_locs.shape[0])])
         probs[probs<1e-44] = 1e-44
-        self.loss_dict['z'] = self.net.temp_grouper*(torch.stack([(-torch.log(torch.softmax(self.net.pi_met,1)) +
+        self.loss_dict['z'] = torch.stack([(-torch.log(torch.softmax(self.net.pi_met,1)) +
                                                                    (self.net.temp_grouper + 1) * torch.log(self.net.z_act[m, :]) +
                                        torch.log((torch.softmax(self.net.pi_met,1) *
                                                   (self.net.z_act[m, :].pow(-self.net.temp_grouper))).sum())).sum() -
                                       torch.log(torch.matmul(self.net.z_act[m, :],probs[m,:]))
-                                      for m in np.arange(self.net.met_locs.shape[0])]).sum(0))
+                                      for m in np.arange(self.net.met_locs.shape[0])]).sum(0)
+        # print('Loss Method 1:' + str(time.time() - start))
 
     def mu_met_loss(self):
         temp_dist = self.net.distributions['mu_met']
