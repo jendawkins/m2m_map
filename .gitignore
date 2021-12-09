@@ -9,3 +9,5 @@ random_locs/
 results_ML/
 results_MAP/learn*
 *.csv
+alpha_hist/
+alpha_probs/

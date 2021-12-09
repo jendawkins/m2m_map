@@ -73,7 +73,7 @@ class MultDist():
         second = first*torch.stack([zw[l]*torch.exp(self.mvn[l].log_prob(a)) for l in range(len(self.mvn))]).sum(0)
         return second
 
-    def make_sampling_table(self, a_samples = None, size = 100):
+    def make_pdf_table(self, a_samples = None, size = 100):
         zw_samples = self.concrete.sample(size = size)
         if a_samples is None:
             a_samples = torch.cat([self.mvn[l].sample([size]) for l in range(len(self.mvn))])

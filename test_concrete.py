@@ -1,5 +1,30 @@
 from main_MAP import *
 
+alphas = np.logspace(0,-5, 100)
+taus = np.logspace(-2, -10, 10)
+for tau in taus:
+    alphas = np.logspace(0, np.log10(tau), 100)
+    BinCon = BinaryConcrete(1,tau)
+    samp_alphas = BinCon.sample(size = [100])
+    fig, ax = plt.subplots()
+    ax.hist(samp_alphas)
+    ax.set_xscale('log')
+    ax.set_title('tau = ' + str(tau))
+    fig.savefig('alpha_hist/tau' + str(tau).replace('.','d') + '.pdf')
+    plt.close(fig)
+    probs = []
+    fig, ax = plt.subplots()
+    for alpha in alphas:
+        probs.append(BinCon.pdf(alpha).item())
+    ax.semilogx(alphas, probs, '*-', ms = 10)
+    ax.set_title('tau = ' + str(tau))
+    ax.set_xlabel('alpha')
+    ax.set_ylabel('probs')
+    if tau == 1:
+        ax.set_ylim(-1e-10,1.01)
+    fig.savefig('alpha_probs/tau' + str(tau).replace('.','d') + '.pdf')
+    plt.close(fig)
+
 x, y, gen_beta, gen_alpha, gen_w, gen_z, gen_bug_locs, gen_met_locs, kmeans_bug, kmeans_met = generate_synthetic_data()
 r_bug = [
     np.max([np.sqrt(np.sum((kmeans_bug.cluster_centers_[i, :] - l) ** 2)) for l in gen_bug_locs[gen_w[:, i] == 1, :]])

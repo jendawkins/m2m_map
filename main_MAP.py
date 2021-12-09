@@ -105,7 +105,9 @@ class Model(nn.Module):
         # beta_dist = Normal(0, np.sqrt(self.beta_var))
         self.beta = nn.Parameter(self.initializations['beta'].sample([self.L+1, self.K]), requires_grad=True)
 
-        self.alpha = nn.Parameter(self.initializations['alpha'].sample([self.L, self.K]), requires_grad=True)
+        temp = self.initializations['alpha'].sample([self.L, self.K])
+        temp[temp == 0] = -1
+        self.alpha = nn.Parameter(temp, requires_grad=True)
         self.alpha_act = torch.sigmoid(self.alpha / self.temp_selector)
         self.mu_met = nn.Parameter(self.initializations['mu_met'].sample(sample_shape = torch.Size([self.K])),
                                         requires_grad = True)
@@ -133,13 +135,13 @@ class Model(nn.Module):
 
     def forward(self, x):
         self.alpha_act = torch.sigmoid(self.alpha/self.tau_transformer)
-        self.alpha_act = torch.clamp(self.alpha_act, min=1e-10, max=1-1e-7)
+        self.alpha_act = torch.clamp(self.alpha_act, min=self.temp_grouper, max=1-self.temp_grouper)
         self.w_act = torch.softmax(self.w / self.tau_transformer, 1)
-        self.w_act = torch.clamp(self.w_act, min=1e-10, max=1-1e-7)
+        self.w_act = torch.clamp(self.w_act, min=self.temp_selector, max=1-self.temp_selector)
         g = torch.matmul(torch.Tensor(x), self.w_act)
         # K
         self.z_act = torch.softmax(self.z / self.tau_transformer, 1)
-        self.z_act = torch.clamp(self.z_act, min=1e-10, max=1-1e-7)
+        self.z_act = torch.clamp(self.z_act, min=self.temp_selector, max=1-self.temp_selector)
         out_clusters = self.beta[0,:] + torch.matmul(g, self.beta[1:,:]*self.alpha_act)
         out = torch.matmul(out_clusters + self.meas_var*torch.randn(out_clusters.shape), self.z_act.T)
         return out_clusters, out
@@ -284,7 +286,7 @@ if __name__ == "__main__":
     if args.N_met is not None:
         N_met = args.N_met
     else:
-        N_met = 6
+        N_met = 5
     if args.N_bug is not None:
         N_bug = args.N_bug
     else:
@@ -299,7 +301,7 @@ if __name__ == "__main__":
 
     n_splits = 2
     use_MAP = True
-    meas_var = 1
+    meas_var = 4
     lr = 0.001
     temp_grouper, temp_selector = 'scheduled', 'scheduled'
     temp_transformer = 0.1
@@ -359,13 +361,13 @@ if __name__ == "__main__":
     fig_dict4, ax_dict4 = {},{}
     fig_dict5, ax_dict5 = {},{}
     param_dict = {}
-    tau_orig = copy.copy(net.temp_grouper)
-    tau_alpha_orig = copy.copy(net.temp_selector)
+    tau_logspace = np.logspace(-0.5, -6, 97)
     for fold in np.arange(n_splits):
+        net.temp_grouper, net.temp_selector = tau_logspace[0],tau_logspace[0]
+        net_.temp_grouper, net_.temp_selector = tau_logspace[0],tau_logspace[0]
+
         param_dict[fold] = {}
 
-        net.temp_grouper = tau_orig
-        net.temp_selector = tau_alpha_orig
         net.initialize(fold)
         for name, parameter in net.named_parameters():
             if name not in params2learn and 'all' not in params2learn:
@@ -403,8 +405,9 @@ if __name__ == "__main__":
                 setattr(net_, name, nn.Parameter(val, requires_grad=False))
             else:
                 setattr(net_, name, nn.Parameter(torch.Tensor(true_vals[name]), requires_grad=False))
-
-        net_.z_act, net_.w_act, net_.alpha_act = torch.softmax(net_.z/0.1,1), torch.softmax(net_.w/0.1, 1), torch.sigmoid(net_.alpha/0.1)
+        net_.z_act, net_.w_act = torch.softmax(net_.z/0.1,1), torch.softmax(net_.w/0.1, 1)
+        net_.alpha[net_.alpha == 0] = -1
+        net_.alpha_act = torch.sigmoid(net_.alpha/0.1)
         criterion_ = MAPloss(net_, compute_loss_for=priors2set, meas_var=meas_var)
         # lowest_loss = criterion_.compute_loss(torch.Tensor(targets), torch.Tensor(targets))
         lowest_loss = criterion_.compute_loss(torch.Tensor(cluster_targets), torch.Tensor(targets))
@@ -415,17 +418,18 @@ if __name__ == "__main__":
         tau_vec = []
         alpha_tau_vec = []
         lowest_loss_vec = []
+        ix = 0
         for epoch in range(iterations):
-            if isinstance(temp_grouper, str) and ('z' in params2learn or 'w' in params2learn or 'all' in params2learn):
-                if epoch%200==0 and epoch>400 and net.temp_grouper > 1e-20:
-                    net.temp_grouper = net.temp_grouper/((epoch-400)/200)
-                    net_.temp_grouper = net_.temp_grouper/((epoch-500)/200)
+            # if epoch == 1000:
+            #     print('debug')
+            if isinstance(temp_grouper, str) and isinstance(temp_selector, str):
+                if epoch%100==0 and epoch>400:
+                    ix = int((epoch-400)/100)
+                    net.temp_grouper, net.temp_selector = tau_logspace[ix],tau_logspace[ix]
+                    net_.temp_grouper, net_.temp_selector = tau_logspace[ix],tau_logspace[ix]
+                    lowest_loss = criterion_.compute_loss(torch.Tensor(cluster_targets), torch.Tensor(targets))
+                    print('Lowest Loss:' + str(lowest_loss.item()))
                 tau_vec.append(net.temp_grouper)
-            if isinstance(temp_selector, str) and ('alpha' in params2learn or 'all' in params2learn):
-                if epoch%200==0 and epoch>400 and net.temp_selector > 1e-20:
-                    net.temp_selector = net.temp_selector/((epoch-400)/200)
-                    net_.temp_selector = net_.temp_selector/((epoch-500)/200)
-                alpha_tau_vec.append(net.temp_selector)
             optimizer.zero_grad()
             cluster_outputs, outputs = net(x_train)
             train_out_vec.append(outputs)
@@ -457,8 +461,6 @@ if __name__ == "__main__":
 
             if (epoch%1000 == 0 and epoch != 0) or end_learning:
                 print('Epoch ' + str(epoch) + ' Loss: ' + str(loss_vec[-1]))
-                lowest_loss = criterion_.compute_loss(torch.Tensor(cluster_targets), torch.Tensor(targets))
-                print('Lowest Loss: ' + str(lowest_loss.item()))
                 print('Tau: ' + str(net.temp_grouper))
                 print('')
                 # train_out_vec.append(outputs)
@@ -472,6 +474,16 @@ if __name__ == "__main__":
                 plot_output(path, loss_vec, train_out_vec, targets, gen_z, gen_w, param_dict[fold],
                                      fig_dict4, ax_dict4, fig_dict5, ax_dict5, fold, type = 'train')
                 plot_output_locations(path, net, loss_vec, param_dict[fold], fold)
+                if isinstance(temp_grouper, str) and len(tau_vec) > 0:
+                    fig, ax = plt.subplots()
+                    ax.semilogy(range(epoch+1), tau_vec)
+                    fig.savefig(path + 'fold' + str(fold) + '_tau_scheduler.pdf')
+                    plt.close(fig)
+                if isinstance(temp_selector, str) and len(alpha_tau_vec) > 0:
+                    fig, ax = plt.subplots()
+                    ax.semilogy(range(epoch+1), alpha_tau_vec)
+                    fig.savefig(path + 'fold' + str(fold) + '_alpha_tau_scheduler.pdf')
+                    plt.close(fig)
 
                 # loss_vec.append(running_loss/10)
                 # running_loss = 0
@@ -497,16 +509,7 @@ if __name__ == "__main__":
                 print('end learning, fold ' + str(fold))
                 break
 
-        if isinstance(temp_grouper, str) and len(tau_vec)>0:
-            fig, ax = plt.subplots()
-            ax.semilogy(range(iterations), tau_vec)
-            fig.savefig(path + 'fold' + str(fold) + '_tau_scheduler.pdf')
-            plt.close(fig)
-        if isinstance(temp_selector, str) and len(alpha_tau_vec)>0:
-            fig, ax = plt.subplots()
-            ax.semilogy(range(iterations), alpha_tau_vec)
-            fig.savefig(path + 'fold' + str(fold) + '_alpha_tau_scheduler.pdf')
-            plt.close(fig)
+
         # if fold == 0:
         #     plot_param_traces(path, param_dict, params2learn, true_vals, net, fig_dict, ax_dict)
 
