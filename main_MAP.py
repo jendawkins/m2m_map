@@ -373,7 +373,7 @@ if __name__ == "__main__":
     for param, dist in net.initializations.items():
         plot_distribution(dist, param, true_val = getattr(net, param), ptype = 'init', path = path)
     kfold = KFold(n_splits = n_splits, shuffle = True)
-    iterations =10001
+    iterations =15001
 
     # z_vals = [net.z]
 
@@ -440,7 +440,7 @@ if __name__ == "__main__":
             except:
                 with open('err.txt', 'a') as f:
                     f.write(path + '\n')
-                sys.exit('Error forward step')
+                sys.exit('Epoch ' + str(epoch) + ', Error forward step')
 
             train_out_vec.append(cluster_outputs)
             loss_vec.append(loss.item())
@@ -450,14 +450,14 @@ if __name__ == "__main__":
                 with open('err.txt', 'a') as f:
                     f.write(path + '\n')
                 shutil.rmtree(path)
-                sys.exit('Error in loss.backward()')
+                sys.exit('Epoch ' + str(epoch) + ', Error in loss.backward()')
             try:
                 optimizer.step()
             except:
                 with open('err.txt', 'a') as f:
                     f.write(path + '\n')
                 # shutil.rmtree(path)
-                sys.exit('Error in optimizer.step()')
+                sys.exit('Epoch ' + str(epoch) + ', Error in optimizer.step()')
 
             for name, parameter in net.named_parameters():
                 if name == 'w' or name == 'z' or name == 'alpha':
