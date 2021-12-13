@@ -17,18 +17,19 @@ import numpy as np
 from concrete import *
 
 class MAPloss():
-    def __init__(self,net, meas_var=1,
-                 compute_loss_for = ['alpha','beta','w','z','mu_bug','r_bug','pi_bug','mu_met','r_met','pi_met']):
+    def __init__(self,net):
         self.net = net
-        self.meas_var = meas_var
+        self.meas_var = net.meas_var
         self.loss_dict = {}
-        self.compute_loss_for = compute_loss_for
+        self.compute_loss_for = net.compute_loss_for
 
+    #@profile
     def compute_loss(self, outputs, true):
         s1, s2 = outputs.shape[1], true.shape[1]
         temp_dist = Normal(outputs.T, np.sqrt(self.meas_var))
         log_probs = torch.stack([temp_dist.log_prob(true[:,j]) for j in range(true.shape[1])])
-        log_probs[np.where(log_probs < -103)] = -103
+        log_probs = torch.clamp(log_probs, min = -103, max = 103)
+        # log_probs[np.where(log_probs < -103)] = -103
         self.loss_dict['y'] = -torch.log((self.net.z_act.unsqueeze(-1).repeat(1,1,log_probs.shape[-1])*torch.exp(log_probs)).sum(1)).sum()
         # criterion2 = nn.L1Loss()
         # self.loss_dict['y'] = criterion2(outputs, true)
@@ -86,7 +87,7 @@ class MAPloss():
     def r_bug_loss(self):
         gamma = self.net.distributions['r_bug']
         val = 1 / torch.exp(self.net.r_bug)
-        val = torch.clamp(val, min=1e-20)
+        val = torch.clamp(val, min=1e-10)
         self.loss_dict['r_bug'] = -gamma.log_prob(val).sum()
         # if torch.isnan(self.loss_dict['r_bug']).any() or torch.isinf(self.loss_dict['r_bug']).any():
         #     print('debug')

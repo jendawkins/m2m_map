@@ -198,6 +198,8 @@ def plot_output_locations(path, net, loss, param_dict, fold):
                              alpha=0.2, color=p2.get_facecolor().squeeze(), label = 'Cluster ' + str(i))
 
         ax[0].add_patch(circle2)
+        ax[0].set_aspect('equal')
+
     best_z = np.argmax(param_dict['z'][best_mod],1)
     best_mu = param_dict['mu_met'][best_mod]
     best_r = param_dict['r_met'][best_mod]
@@ -210,18 +212,20 @@ def plot_output_locations(path, net, loss, param_dict, fold):
         circle2 = plt.Circle((best_mu[i, 0], best_mu[i, 1]), best_r[i],
                              alpha=0.2, color=p2.get_facecolor().squeeze(), label='Cluster ' + str(i))
         ax[1].add_patch(circle2)
+        ax[1].set_aspect('equal')
 
     fig.tight_layout()
     fig.savefig(path + 'fold' + str(fold) + '-predicted_cluster_centers.pdf')
     plt.close(fig)
 
 def plot_output(path, loss, out_vec, targets, gen_z, gen_w, param_dict, fig_dict2, ax_dict2,
-                fig_dict3, ax_dict3, fold, type = 'unknown'):
+                fig_dict3, ax_dict3, fold, type = 'unknown', meas_var = 0.1):
     best_mod = np.argmin(loss)
-    preds = out_vec[best_mod]
+    pred_clusters = out_vec[best_mod]
+    pred_z = param_dict['z'][best_mod]
+    preds = torch.matmul(pred_clusters + meas_var*torch.randn(pred_clusters.shape), torch.Tensor(pred_z).T)
     total = np.concatenate([targets, preds.detach().numpy()])
 
-    pred_z = param_dict['z'][best_mod]
     df_dict= {}
     for col in np.arange(pred_z.shape[1]):
         df_dict['Cluster ' + str(col) + ' Prediction'] = np.round(pred_z[:,col],3)

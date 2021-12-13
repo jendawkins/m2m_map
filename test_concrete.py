@@ -13,17 +13,17 @@ for tau in taus:
     fig.savefig('alpha_hist/tau' + str(tau).replace('.','d') + '.pdf')
     plt.close(fig)
     probs = []
-    fig, ax = plt.subplots()
-    for alpha in alphas:
-        probs.append(BinCon.pdf(alpha).item())
-    ax.semilogx(alphas, probs, '*-', ms = 10)
-    ax.set_title('tau = ' + str(tau))
-    ax.set_xlabel('alpha')
-    ax.set_ylabel('probs')
-    if tau == 1:
-        ax.set_ylim(-1e-10,1.01)
-    fig.savefig('alpha_probs/tau' + str(tau).replace('.','d') + '.pdf')
-    plt.close(fig)
+    # fig, ax = plt.subplots()
+    # for alpha in alphas:
+    #     probs.append(BinCon.pdf(alpha).item())
+    # ax.semilogx(alphas, probs, '*-', ms = 10)
+    # ax.set_title('tau = ' + str(tau))
+    # ax.set_xlabel('alpha')
+    # ax.set_ylabel('probs')
+    # if tau == 1:
+    #     ax.set_ylim(-1e-10,1.01)
+    # fig.savefig('alpha_probs/tau' + str(tau).replace('.','d') + '.pdf')
+    # plt.close(fig)
 
 x, y, gen_beta, gen_alpha, gen_w, gen_z, gen_bug_locs, gen_met_locs, kmeans_bug, kmeans_met = generate_synthetic_data()
 r_bug = [

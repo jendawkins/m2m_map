@@ -18,11 +18,15 @@ from MAP_loss import *
 from concrete import *
 import copy
 import argparse
+import shutil
+import sys
+import cProfile
 
 
 class Model(nn.Module):
-    def __init__(self, met_locs, microbe_locs, temp_grouper = 10, temp_selector = 1, L = 2, K = 2, beta_var = 16.,
-                 seed = 0, tau_transformer = 1, meas_var = 0.1):
+    def __init__(self, met_locs, microbe_locs, temp_grouper = 1, temp_selector = 1, L = 2, K = 2, beta_var = 16.,
+                 seed = 0, tau_transformer = 1, meas_var = 1,
+                 compute_loss_for = ['alpha','beta','w','z','mu_bug','r_bug','pi_bug','mu_met','r_met','pi_met']):
         super(Model, self).__init__()
         self.L = L
         self.K = K
@@ -30,14 +34,10 @@ class Model(nn.Module):
         self.mu_var_met = (2/met_locs.shape[1])*np.sum(np.var(met_locs.T))
         self.mu_var_bug = (2/microbe_locs.shape[1])*np.sum(np.var(microbe_locs.T))
         self.meas_var = meas_var
-        if isinstance(temp_grouper, str):
-            self.temp_grouper = 1
-        else:
-            self.temp_grouper = temp_grouper
-        if isinstance(temp_selector, str):
-            self.temp_selector = 1
-        else:
-            self.temp_selector = temp_selector
+        self.compute_loss_for = compute_loss_for
+        self.MAPloss = MAPloss(self)
+        self.temp_grouper = temp_grouper
+        self.temp_selector = temp_selector
         self.met_locs = met_locs
         self.microbe_locs = microbe_locs
         self.embedding_dim = met_locs.shape[1]
@@ -93,7 +93,7 @@ class Model(nn.Module):
         torch.manual_seed(seed)
         self.initializations = {}
         self.initializations['beta'] = self.distributions['beta']
-        self.initializations['alpha'] = Bernoulli(0.5)
+        self.initializations['alpha'] = Normal(0,1)
         self.initializations['mu_met'] = self.distributions['mu_met']
         self.initializations['mu_bug'] = self.distributions['mu_bug']
         self.initializations['r_met'] = self.distributions['r_met']
@@ -105,9 +105,7 @@ class Model(nn.Module):
         # beta_dist = Normal(0, np.sqrt(self.beta_var))
         self.beta = nn.Parameter(self.initializations['beta'].sample([self.L+1, self.K]), requires_grad=True)
 
-        temp = self.initializations['alpha'].sample([self.L, self.K])
-        temp[temp == 0] = -1
-        self.alpha = nn.Parameter(temp, requires_grad=True)
+        self.alpha = nn.Parameter(self.initializations['alpha'].sample([self.L, self.K]), requires_grad=True)
         self.alpha_act = torch.sigmoid(self.alpha / self.temp_selector)
         self.mu_met = nn.Parameter(self.initializations['mu_met'].sample(sample_shape = torch.Size([self.K])),
                                         requires_grad = True)
@@ -133,34 +131,34 @@ class Model(nn.Module):
         self.z = nn.Parameter(self.initializations['z'].sample([self.met_locs.shape[0], self.K]), requires_grad=True)
         self.z_act = torch.softmax(self.z, 1)
 
-    def forward(self, x):
-        self.alpha_act = torch.sigmoid(self.alpha/self.tau_transformer)
-        self.alpha_act = torch.clamp(self.alpha_act, min=self.temp_grouper, max=1-self.temp_grouper)
-        self.w_act = torch.softmax(self.w / self.tau_transformer, 1)
-        self.w_act = torch.clamp(self.w_act, min=self.temp_selector, max=1-self.temp_selector)
+    #@profile
+    def forward(self, x, y):
+        temp = torch.clamp(self.alpha, min = -13.5, max = 13.5)
+        self.alpha_act = torch.sigmoid(temp/self.tau_transformer)
+        self.alpha_act = torch.clamp(self.alpha_act, min=self.temp_selector, max=1-self.temp_selector)
+        temp = torch.clamp(self.w, min=-13.5, max=13.5)
+        self.w_act = torch.softmax(temp / self.tau_transformer, 1)
+        self.w_act = torch.clamp(self.w_act, min=self.temp_grouper, max=1-self.temp_grouper)
         g = torch.matmul(torch.Tensor(x), self.w_act)
         # K
-        self.z_act = torch.softmax(self.z / self.tau_transformer, 1)
-        self.z_act = torch.clamp(self.z_act, min=self.temp_selector, max=1-self.temp_selector)
+        temp = torch.clamp(self.z, min=-13.5, max=13.5)
+        self.z_act = torch.softmax(temp / self.tau_transformer, 1)
+        self.z_act = torch.clamp(self.z_act, min=self.temp_grouper, max=1-self.temp_grouper)
         out_clusters = self.beta[0,:] + torch.matmul(g, self.beta[1:,:]*self.alpha_act)
-        out = torch.matmul(out_clusters + self.meas_var*torch.randn(out_clusters.shape), self.z_act.T)
-        return out_clusters, out
+        loss = self.MAPloss.compute_loss(out_clusters,y)
+        # out = torch.matmul(out_clusters + self.meas_var*torch.randn(out_clusters.shape), self.z_act.T)
+        return out_clusters, loss
 
 
 # Make X clusters distinct as possible
 def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clusters = 2, N_bug_clusters = 2, state = 1,
-                            beta_var = 2, cluster_disparity = 50, case = 'Case 1', num_nuisance=2):
-    if case == 'Case 5':
-        cluster_disparity = 10
-        var = 10
-    else:
-        var = 1
+                            beta_var = 2, cluster_disparity = 50, case = 'Case 1', num_nuisance=2, meas_var = 0.001):
     np.random.seed(state)
     choose_from = np.arange(N_met)
     met_gp_ids = []
     for n in range(N_met_clusters-1):
-        num_choose = np.random.choice(np.arange(2,len(choose_from)-(N_met_clusters-n)),1)
-        chosen = np.random.choice(choose_from, num_choose,replace = False)
+        # num_choose = np.random.choice(np.arange(2,len(choose_from)-(N_met_clusters-n)),1)
+        chosen = np.random.choice(choose_from, int(N_met/N_met_clusters),replace = False)
         choose_from = list(set(choose_from) - set(chosen))
         met_gp_ids.append(chosen)
     met_gp_ids.append(np.array(choose_from))
@@ -179,10 +177,10 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
     choose_from = np.arange(N_bug)
     bug_gp_ids = []
     for n in range(N_bug_clusters-1):
-        num_choose = np.random.choice(np.arange(2,len(choose_from)-(N_bug_clusters-n)),1)
-        if num_choose < 5 and case == 'Case 2':
-            num_choose = 5
-        chosen = np.random.choice(choose_from, num_choose,replace = False)
+        # num_choose = np.random.choice(np.arange(2,len(choose_from)-(N_bug_clusters-n)),1)
+        # if num_choose < 5 and case == 'Case 2':
+        #     num_choose = 5
+        chosen = np.random.choice(choose_from, int(N_met/N_met_clusters),replace = False)
         choose_from = list(set(choose_from) - set(chosen))
         bug_gp_ids.append(chosen)
     bug_gp_ids.append(np.array(choose_from))
@@ -217,35 +215,46 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
     cluster_means = np.random.choice(
         np.arange(1, np.int(N_bug_clusters * cluster_disparity * 2) + 1, cluster_disparity), N_bug_clusters,
         replace=False)
+    cluster_means = cluster_means / (np.max(cluster_means) + 10)
     if N_bug_clusters==2 and N_met_clusters==2:
         betas = np.array([[0,0],[0,3],[3,0]])
         alphas = np.array([[0, 1], [1, 0]])
-        cluster_means = [10,100]
+        cluster_means = [0.1,0.9]
         if case=='Case 5':
             cluster_means = [20, 30]
     X = np.zeros((N_samples, N_bug))
 
-    if case == 'Case 2':
+    if case == 'Case 3':
         w_gen = np.hstack((w_gen, np.zeros((w_gen.shape[0], 1))))
         N = int(num_nuisance/N_bug_clusters)
     if case == 'Case 6':
         for i in range(N_bug):
-            X[:, i] = st.poisson(i*cluster_disparity).rvs(size=(N_samples))
+            mu = (i*cluster_disparity)/(N_bug*cluster_disparity + 10)
+            var = mu + 10
+            p = mu/var
+            n = (mu**2)/(var - mu)
+            X[:, i] = st.nbinom(n,p).rvs(size=(N_samples))
     else:
         for i in range(N_bug_clusters):
             ixs = np.where(w_gen[:,i]==1)[0]
-            if case == 'Case 2':
+            if case == 'Case 3':
                 s = np.random.choice(ixs, N)
-                X[:, s] = st.poisson(np.mean(cluster_means)).rvs(size = (N_samples, N))
+                mu = np.means(cluster_means)
+                v = (mu*(1-mu))/meas_var
+                X[:, s] = st.beta(mu * v, (1 - mu) * v).rvs(size = (N_samples, N))
                 ixs = np.array(list(set(ixs) - set(s)))
                 w_gen[s,:] = [0,0,1]
-            X[:, ixs] = st.poisson(cluster_means[i]).rvs(size = (N_samples, len(ixs)))
+            mu = cluster_means[i]
+            v = (mu * (1 - mu)) / meas_var
+            X[:, ixs] = st.beta(mu * v, (1 - mu) * v).rvs(size = (N_samples, len(ixs)))
     X = X/np.expand_dims(np.sum(X, 1),1)
-    if case == 'Case 2':
+    if case == 'Case 3':
         g = X@w_gen[:,:-1]
     else:
         g = X@w_gen
-    y = (betas[0,:] + g@(betas[1:,:]*alphas))@z_gen.T + var*np.random.normal(0,1)
+    if case == 'Case 2':
+        betas[:,-1] = np.zeros(len(betas[:,-1]))
+    y = (betas[0,:] + g@(betas[1:,:]*alphas))@z_gen.T + meas_var*np.random.normal(0,1, size = (X.shape[0], z_gen.shape[0]))
     return X, y, betas, alphas, w_gen, z_gen, bug_locs, met_locs, kmeans_bug, kmeans_met
 
 if __name__ == "__main__":
@@ -259,6 +268,8 @@ if __name__ == "__main__":
     parser.add_argument("-L", "--L", help="bug clusters", type=int)
     parser.add_argument("-K", "--K", help="metab clusters", type=int)
     parser.add_argument("-N_nuisance", "--N_nuisance", help="N_nuisance", type=int)
+    parser.add_argument("-meas_var", "--meas_var", help="measurment variance", type=float)
+    parser.add_argument("-prior_meas_var", "--prior_meas_var", help = "prior measurment variance", type = float)
     args = parser.parse_args()
     # ['z','w','alpha','beta','mu_bug','mu_met','r_bug','r_met','pi_bug','pi_met']
     # 'z' 'w' 'alpha' 'beta' 'mu_bug' 'mu_met' 'r_bug' 'r_met' 'pi_bug' 'pi_met'
@@ -275,8 +286,8 @@ if __name__ == "__main__":
     else:
         priors2set = []
     if args.learn is None and args.priors is None:
-        params2learn = ['all']
-        priors2set = ['all']
+        params2learn = ['z', 'r_met', 'mu_met']
+        priors2set = ['z', 'r_met', 'mu_met']
 
     if args.case is not None:
         case = 'Case ' + str(args.case)
@@ -286,11 +297,11 @@ if __name__ == "__main__":
     if args.N_met is not None:
         N_met = args.N_met
     else:
-        N_met = 5
+        N_met = 20
     if args.N_bug is not None:
         N_bug = args.N_bug
     else:
-        N_bug = 5
+        N_bug = 20
     if args.N_nuisance is None:
         if case != 'Case 2':
             n_nuisance = 0
@@ -299,14 +310,25 @@ if __name__ == "__main__":
     else:
         n_nuisance = args.N_nuisance
 
+    if args.meas_var is None:
+        meas_var = 0.1
+    else:
+        meas_var = args.meas_var
+    if args.prior_meas_var is None:
+        prior_meas_var = 4
+    else:
+        prior_meas_var = args.prior_meas_var
+
+    if not os.path.isfile('err.txt'):
+        with open('err.txt', 'w') as f:
+            f.write('')
     n_splits = 2
     use_MAP = True
-    meas_var = 4
     lr = 0.001
     temp_grouper, temp_selector = 'scheduled', 'scheduled'
     temp_transformer = 0.1
-    info = 'lr_' + str(lr).replace('.','d') + '-tauZW_' + str(temp_grouper).replace('.','d') + '-tauA_' + \
-        str(temp_selector).replace('.','d') + '-tauT_' + str(temp_transformer).replace('.','d')
+    info = 'meas_var' + str(meas_var).replace('.', 'd') + '-prior_mvar' + str(prior_meas_var).replace('.', 'd') + \
+           '-lr' + str(lr).replace('.','d')
     if use_MAP:
         path = 'results_MAP/'
     else:
@@ -315,18 +337,18 @@ if __name__ == "__main__":
     path = path + case.replace(' ','_')
     if not os.path.isdir(path):
         os.mkdir(path)
-
-    path = path + '/N_bug' + str(N_bug) + '-N_met' + str(N_met) + '-N_nuisance' + str(n_nuisance) +  '-L' + str(args.L) + '-K' + str(args.K) +'/'
+    path = path + '/' + info + 'learn_' + '_'.join(params2learn) + '-priors_' + '_'.join(priors2set) + '/'
     if not os.path.isdir(path):
         os.mkdir(path)
-    path = path + '/learn_' + '_'.join(params2learn) + '-priors_' + '_'.join(priors2set) + '-' + info + '/'
+    path = path + '/N_bug' + str(N_bug) + '-N_met' + str(N_met) + '-N_nuisance' + str(n_nuisance) +  '-L' + str(L) + '-K' + str(K) +'/'
     if not os.path.isdir(path):
         os.mkdir(path)
 
     if 'all' in priors2set:
         priors2set = ['z','w','alpha','beta','mu_bug','mu_met','r_bug','r_met','pi_bug','pi_met']
     x, y, gen_beta, gen_alpha, gen_w, gen_z, gen_bug_locs, gen_met_locs, kmeans_bug, kmeans_met = generate_synthetic_data(
-        case=case, N_met = N_met, N_bug = N_bug, num_nuisance=n_nuisance, N_met_clusters = K, N_bug_clusters = L)
+        case=case, N_met = N_met, N_bug = N_bug, num_nuisance=n_nuisance, N_met_clusters = K, N_bug_clusters = L,
+        meas_var = meas_var)
 
     r_bug = [np.max([np.sqrt(np.sum((kmeans_bug.cluster_centers_[i,:] - l)**2)) for l in gen_bug_locs[gen_w[:,i]==1,:]]) for i in
              range(kmeans_bug.cluster_centers_.shape[0])]
@@ -339,11 +361,11 @@ if __name__ == "__main__":
                   r_bug, kmeans_met.cluster_centers_, r_met)
 
     dataset = (x,y)
-    net_ = Model(gen_met_locs, gen_bug_locs, L = gen_w.shape[1], K = gen_z.shape[1], temp_grouper=temp_grouper,
-                temp_selector = temp_selector, tau_transformer=0.1)
+    # net_ = Model(gen_met_locs, gen_bug_locs, L = gen_w.shape[1], K = gen_z.shape[1],
+    #              tau_transformer=temp_transformer, meas_var=prior_meas_var)
 
-    net = Model(gen_met_locs, gen_bug_locs, L=gen_w.shape[1], K=gen_z.shape[1], temp_grouper=temp_grouper,
-                 temp_selector=temp_selector, tau_transformer=temp_transformer)
+    net = Model(gen_met_locs, gen_bug_locs, L=gen_w.shape[1], K=gen_z.shape[1],
+                tau_transformer=temp_transformer, meas_var = prior_meas_var)
     for param, dist in net.distributions.items():
         parameter_dict = net.params[param]
         plot_distribution(dist, param, true_val = true_vals[param], ptype = 'prior', path = path, **parameter_dict)
@@ -361,10 +383,11 @@ if __name__ == "__main__":
     fig_dict4, ax_dict4 = {},{}
     fig_dict5, ax_dict5 = {},{}
     param_dict = {}
-    tau_logspace = np.logspace(-0.5, -6, 97)
+    tau_logspace = np.logspace(-0.5, -6, int(iterations/100))
+    # prior_var_vec = np.linspace(10,1, int(iterations/100))
     for fold in np.arange(n_splits):
         net.temp_grouper, net.temp_selector = tau_logspace[0],tau_logspace[0]
-        net_.temp_grouper, net_.temp_selector = tau_logspace[0],tau_logspace[0]
+        # net_.temp_grouper, net_.temp_selector = tau_logspace[0],tau_logspace[0]
 
         param_dict[fold] = {}
 
@@ -375,12 +398,13 @@ if __name__ == "__main__":
                 parameter = nn.Parameter(torch.Tensor(true_vals[name]), requires_grad=False)
             elif name == 'w' or name == 'z' or name == 'alpha':
                 parameter = getattr(net, name + '_act')
-            elif name == 'r_bug' or name == 'r_met':
-                parameter = torch.exp(parameter)
+            elif name == 'r_bug':
+                if 'r_bug' in params2learn:
+                    parameter = torch.exp(parameter)
+            elif name == 'r_met':
+                if 'r_met' in params2learn:
+                    parameter = torch.exp(parameter)
             param_dict[fold][name] = [parameter.clone().detach().numpy()]
-        print(param_dict[fold].keys())
-        criterion = MAPloss(net, compute_loss_for=priors2set, meas_var = meas_var)
-        criterion2 = nn.L1Loss()
         # optimizer = optim.SGD(net.parameters(), lr=0.1, momentum = 0.9)
         optimizer = optim.RMSprop(net.parameters(),lr=lr)
         x_train, targets = x, y
@@ -395,23 +419,21 @@ if __name__ == "__main__":
         timer = []
         end_learning = False
 
-        net_.initialize(fold)
-        for name, parameter in net_.named_parameters():
-            if 'r' in name:
-                setattr(net_, name, nn.Parameter(torch.log(torch.Tensor(true_vals[name])), requires_grad=False))
-            elif 'pi' in name:
-                val = torch.Tensor(true_vals[name])
-                val = torch.log(val) + torch.log(torch.exp(val).sum())
-                setattr(net_, name, nn.Parameter(val, requires_grad=False))
-            else:
-                setattr(net_, name, nn.Parameter(torch.Tensor(true_vals[name]), requires_grad=False))
-        net_.z_act, net_.w_act = torch.softmax(net_.z/0.1,1), torch.softmax(net_.w/0.1, 1)
-        net_.alpha[net_.alpha == 0] = -1
-        net_.alpha_act = torch.sigmoid(net_.alpha/0.1)
-        criterion_ = MAPloss(net_, compute_loss_for=priors2set, meas_var=meas_var)
-        # lowest_loss = criterion_.compute_loss(torch.Tensor(targets), torch.Tensor(targets))
-        lowest_loss = criterion_.compute_loss(torch.Tensor(cluster_targets), torch.Tensor(targets))
-        print('Lowest Loss:' + str(lowest_loss.item()))
+        # net_.initialize(fold)
+        # for name, parameter in net_.named_parameters():
+        #     if 'r' in name:
+        #         setattr(net_, name, nn.Parameter(torch.log(torch.Tensor(true_vals[name])), requires_grad=False))
+        #     elif 'pi' in name:
+        #         val = torch.Tensor(true_vals[name])
+        #         val = torch.log(val) + torch.log(torch.exp(val).sum())
+        #         setattr(net_, name, nn.Parameter(val, requires_grad=False))
+        #     else:
+        #         setattr(net_, name, nn.Parameter(torch.Tensor(true_vals[name]), requires_grad=False))
+        # net_.z_act, net_.w_act = torch.softmax(net_.z/0.1,1), torch.softmax(net_.w/0.1, 1)
+        # net_.alpha[net_.alpha == 0] = -1
+        # net_.alpha_act = torch.sigmoid(net_.alpha/0.1)
+        # cluster_targets, lowest_loss = net_(torch.Tensor(x),torch.Tensor(y))
+        # print('Lowest Loss:' + str(lowest_loss.item()))
         # for param in criterion_.loss_dict.keys():
         #     print(param + ' Lowest Loss:' + str(criterion_.loss_dict[param].item()))
 
@@ -420,37 +442,56 @@ if __name__ == "__main__":
         lowest_loss_vec = []
         ix = 0
         for epoch in range(iterations):
+            if epoch == iterations:
+                end_learning = True
             # if epoch == 1000:
             #     print('debug')
             if isinstance(temp_grouper, str) and isinstance(temp_selector, str):
                 if epoch%100==0 and epoch>400:
                     ix = int((epoch-400)/100)
+                    if ix >= len(tau_logspace):
+                        ix = -1
                     net.temp_grouper, net.temp_selector = tau_logspace[ix],tau_logspace[ix]
-                    net_.temp_grouper, net_.temp_selector = tau_logspace[ix],tau_logspace[ix]
-                    lowest_loss = criterion_.compute_loss(torch.Tensor(cluster_targets), torch.Tensor(targets))
-                    print('Lowest Loss:' + str(lowest_loss.item()))
+                    # net.meas_var = prior_var_vec_var_vec[ix]
+                    # net_.temp_grouper, net_.temp_selector = tau_logspace[ix],tau_logspace[ix]
+                    # net_.meas_var = prior_var_vec[ix]
+                    # try:
+                    #     cluster_targets, lowest_loss = net_(torch.Tensor(x),torch.Tensor(y))
+                    # except:
+                    #     with open('err.txt', 'a') as f:
+                    #         f.write(path + '\n')
+                    #     # shutil.rmtree(path)
+                    #     sys.exit('Error forward step')
+
+                    # print('Lowest Loss:' + str(lowest_loss.item()))
                 tau_vec.append(net.temp_grouper)
             optimizer.zero_grad()
-            cluster_outputs, outputs = net(x_train)
-            train_out_vec.append(outputs)
-            start = time.time()
-            # if torch.isnan(net.w).any():
-            #     net.w[torch.isnan(net.w)] = net.initializations['w'].sample([1, net.L])
-            #     print('debug')
-            if use_MAP:
-                try:
-                    loss = criterion.compute_loss(cluster_outputs,torch.Tensor(targets))
-                except:
-                    print('debug')
-                    loss = criterion.compute_loss(cluster_outputs,torch.Tensor(targets))
-            else:
-                loss = criterion2(outputs, torch.Tensor(targets))
+            try:
+                cluster_outputs, loss = net(x, torch.Tensor(y))
+            except:
+                with open('err.txt', 'a') as f:
+                    f.write(path + '\n')
+                # shutil.rmtree(path)
+                sys.exit('Error forward step')
 
-            lowest_loss_vec.append(lowest_loss.item())
+            train_out_vec.append(cluster_outputs)
+            # lowest_loss_vec.append(lowest_loss.item())
             loss_vec.append(loss.item())
-            timer.append(time.time()-start)
-            loss.backward()
-            optimizer.step()
+            try:
+                loss.backward()
+            except:
+                with open('err.txt', 'a') as f:
+                    f.write(path + '\n')
+                shutil.rmtree(path)
+                sys.exit('Error in loss.backward()')
+            try:
+                optimizer.step()
+            except:
+                with open('err.txt', 'a') as f:
+                    f.write(path + '\n')
+                # shutil.rmtree(path)
+                sys.exit('Error in optimizer.step()')
+
             for name, parameter in net.named_parameters():
                 if name == 'w' or name == 'z' or name == 'alpha':
                     parameter = getattr(net, name + '_act')
@@ -459,10 +500,16 @@ if __name__ == "__main__":
                 param_dict[fold][name].append(parameter.clone().detach().numpy())
 
 
-            if (epoch%1000 == 0 and epoch != 0) or end_learning:
+            if (epoch%5000 == 0 and epoch != 0) or end_learning:
                 print('Epoch ' + str(epoch) + ' Loss: ' + str(loss_vec[-1]))
                 print('Tau: ' + str(net.temp_grouper))
                 print('')
+                if 'epoch' not in path:
+                    path = path + 'epoch' + str(epoch) + '/'
+                else:
+                    path = path.split('epoch')[0] + 'epoch' + str(epoch) + '/'
+                if not os.path.isdir(path):
+                    os.mkdir(path)
                 # train_out_vec.append(outputs)
                 # fig_dict2[fold], ax_dict2[fold] = plt.subplots(y.shape[1], 1, figsize=(8, 4 * y.shape[1]))
                 # fig_dict3[fold], ax_dict3[fold] = plt.subplots(gen_z.shape[1], 1, figsize=(8, 4 * gen_z.shape[1]))
@@ -500,14 +547,14 @@ if __name__ == "__main__":
                 # #     end_learning = True
                 if epoch != 0:
                     fig3, ax3 = plt.subplots(figsize=(8, 4 * n_splits))
-                    fig3, ax3 = plot_loss(fig3, ax3, fold, epoch+1, loss_vec, lowest_loss=lowest_loss_vec)
+                    fig3, ax3 = plot_loss(fig3, ax3, fold, epoch+1, loss_vec, lowest_loss=None)
                     fig3.tight_layout()
                     fig3.savefig(path + 'loss_fold_' + str(fold) + '.pdf')
                     plt.close(fig3)
 
-            if end_learning:
-                print('end learning, fold ' + str(fold))
-                break
+            # if end_learning:
+            #     print('end learning, fold ' + str(fold))
+            #     break
 
 
         # if fold == 0:
