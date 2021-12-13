@@ -3,7 +3,7 @@ from main_MAP import *
 my_str = '''
 #!/bin/bash
 #BSUB -J m2m
-#BSUB -o m2m.out
+#BSUB -o m2m_L{6}_K{7}_mvar{8}.out
 #BSUB -e m2m.err
 
 # This is a sample script with specific resource requirements for the
