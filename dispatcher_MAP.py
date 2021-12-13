@@ -2,9 +2,9 @@ import subprocess
 from main_MAP import *
 my_str = '''
 #!/bin/bash
-#BSUB -J cdiff
-#BSUB -o output/m2m.out
-#BSUB -e output/m2m.err
+#BSUB -J m2m
+#BSUB -o m2m.out
+#BSUB -e m2m.err
 
 # This is a sample script with specific resource requirements for the
 # **bigmemory** queue with 64GB memory requirement and memory
