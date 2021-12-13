@@ -9,7 +9,7 @@ N_bug = 20
 learn = 'all'
 pid_list = []
 case = 1
-prior_meas_var = 10
+prior_meas_var = 4
 for meas_var in [0.01, 0.1, 1, 4, 9, 16]:
     for L, K in [(2,2),(3,3),(6,6)]:
         for priors in ['all','none']:
