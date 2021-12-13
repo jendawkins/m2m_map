@@ -4,7 +4,7 @@ my_str = '''
 #!/bin/bash
 #BSUB -J m2m
 #BSUB -o m2m_L{6}_K{7}_mvar{8}.out
-#BSUB -e m2m.err
+#BSUB -e m2m_L{6}_K{7}_mvar{8}.err
 
 # This is a sample script with specific resource requirements for the
 # **bigmemory** queue with 64GB memory requirement and memory
@@ -65,19 +65,18 @@ case = 1
 pid_list = []
 prior_meas_var = 4
 for meas_var in [0.01, 0.1, 1, 4, 9, 16]:
-    for L in [2,4,6]:
-        for K in [2,4,6]:
-            for priors in ['all','none']:
-                if case == 1:
-                    n_nuisance = 0
+    for L, K in [(2,2),(4,4),(6,6)]:
+        for priors in ['all','none']:
+            if case == 1:
+                n_nuisance = 0
+                f = open('m2m.lsf', 'w')
+                f.write(my_str.format(learn, priors, case, N_met, N_bug, n_nuisance, L, K, meas_var, prior_meas_var))
+                f.close()
+                os.system('bsub < {}'.format('m2m.lsf'))
+            else:
+                for n_nuisance in [2,4,8,16,18]:
+                    cmd = my_str.format(learn, priors, case, N_met, N_bug, n_nuisance, L, K, meas_var, prior_meas_var)
                     f = open('m2m.lsf', 'w')
-                    f.write(my_str.format(learn, priors, case, N_met, N_bug, n_nuisance, L, K, meas_var, prior_meas_var))
+                    f.write(my_str.format(learn, priors, case, N_met, N_bug, n_nuisance))
                     f.close()
                     os.system('bsub < {}'.format('m2m.lsf'))
-                else:
-                    for n_nuisance in [2,4,8,16,18]:
-                        cmd = my_str.format(learn, priors, case, N_met, N_bug, n_nuisance, L, K, meas_var, prior_meas_var)
-                        f = open('m2m.lsf', 'w')
-                        f.write(my_str.format(learn, priors, case, N_met, N_bug, n_nuisance))
-                        f.close()
-                        os.system('bsub < {}'.format('m2m.lsf'))
