@@ -276,7 +276,7 @@ if __name__ == "__main__":
     if args.L is not None and args.K is not None:
         L, K = args.L, args.K
     else:
-        L, K = 2,2
+        L, K = 6,6
     if args.learn is not None:
         params2learn = args.learn
     if args.priors is not None:
@@ -286,8 +286,8 @@ if __name__ == "__main__":
     else:
         priors2set = []
     if args.learn is None and args.priors is None:
-        params2learn = ['z', 'r_met', 'mu_met']
-        priors2set = ['z', 'r_met', 'mu_met']
+        params2learn = ['all']
+        priors2set = ['all']
 
     if args.case is not None:
         case = 'Case ' + str(args.case)
@@ -418,25 +418,6 @@ if __name__ == "__main__":
         running_loss = 0.0
         timer = []
         end_learning = False
-
-        # net_.initialize(fold)
-        # for name, parameter in net_.named_parameters():
-        #     if 'r' in name:
-        #         setattr(net_, name, nn.Parameter(torch.log(torch.Tensor(true_vals[name])), requires_grad=False))
-        #     elif 'pi' in name:
-        #         val = torch.Tensor(true_vals[name])
-        #         val = torch.log(val) + torch.log(torch.exp(val).sum())
-        #         setattr(net_, name, nn.Parameter(val, requires_grad=False))
-        #     else:
-        #         setattr(net_, name, nn.Parameter(torch.Tensor(true_vals[name]), requires_grad=False))
-        # net_.z_act, net_.w_act = torch.softmax(net_.z/0.1,1), torch.softmax(net_.w/0.1, 1)
-        # net_.alpha[net_.alpha == 0] = -1
-        # net_.alpha_act = torch.sigmoid(net_.alpha/0.1)
-        # cluster_targets, lowest_loss = net_(torch.Tensor(x),torch.Tensor(y))
-        # print('Lowest Loss:' + str(lowest_loss.item()))
-        # for param in criterion_.loss_dict.keys():
-        #     print(param + ' Lowest Loss:' + str(criterion_.loss_dict[param].item()))
-
         tau_vec = []
         alpha_tau_vec = []
         lowest_loss_vec = []
@@ -452,18 +433,6 @@ if __name__ == "__main__":
                     if ix >= len(tau_logspace):
                         ix = -1
                     net.temp_grouper, net.temp_selector = tau_logspace[ix],tau_logspace[ix]
-                    # net.meas_var = prior_var_vec_var_vec[ix]
-                    # net_.temp_grouper, net_.temp_selector = tau_logspace[ix],tau_logspace[ix]
-                    # net_.meas_var = prior_var_vec[ix]
-                    # try:
-                    #     cluster_targets, lowest_loss = net_(torch.Tensor(x),torch.Tensor(y))
-                    # except:
-                    #     with open('err.txt', 'a') as f:
-                    #         f.write(path + '\n')
-                    #     # shutil.rmtree(path)
-                    #     sys.exit('Error forward step')
-
-                    # print('Lowest Loss:' + str(lowest_loss.item()))
                 tau_vec.append(net.temp_grouper)
             optimizer.zero_grad()
             try:
@@ -471,11 +440,9 @@ if __name__ == "__main__":
             except:
                 with open('err.txt', 'a') as f:
                     f.write(path + '\n')
-                # shutil.rmtree(path)
                 sys.exit('Error forward step')
 
             train_out_vec.append(cluster_outputs)
-            # lowest_loss_vec.append(lowest_loss.item())
             loss_vec.append(loss.item())
             try:
                 loss.backward()
@@ -495,8 +462,12 @@ if __name__ == "__main__":
             for name, parameter in net.named_parameters():
                 if name == 'w' or name == 'z' or name == 'alpha':
                     parameter = getattr(net, name + '_act')
-                elif name == 'r_bug' or name == 'r_met':
-                    parameter = torch.exp(parameter)
+                elif name == 'r_bug':
+                    if 'r_bug' in params2learn:
+                        parameter = torch.exp(parameter)
+                elif name == 'r_met':
+                    if 'r_met' in params2learn:
+                        parameter = torch.exp(parameter)
                 param_dict[fold][name].append(parameter.clone().detach().numpy())
 
 
@@ -510,14 +481,9 @@ if __name__ == "__main__":
                     path = path.split('epoch')[0] + 'epoch' + str(epoch) + '/'
                 if not os.path.isdir(path):
                     os.mkdir(path)
-                # train_out_vec.append(outputs)
-                # fig_dict2[fold], ax_dict2[fold] = plt.subplots(y.shape[1], 1, figsize=(8, 4 * y.shape[1]))
-                # fig_dict3[fold], ax_dict3[fold] = plt.subplots(gen_z.shape[1], 1, figsize=(8, 4 * gen_z.shape[1]))
                 fig_dict4[fold], ax_dict4[fold] = plt.subplots(y.shape[1], 1, figsize=(8, 4 * y.shape[1]))
                 fig_dict5[fold], ax_dict5[fold] = plt.subplots(gen_z.shape[1], 1, figsize=(8, 4 * gen_z.shape[1]))
                 plot_param_traces(path, param_dict[fold], params2learn, true_vals, net, fold)
-                # plot_output(path, test_loss, test_out_vec, test_targets, gen_z, gen_w, param_dict[fold],
-                #                 fig_dict2, ax_dict2, fig_dict3,ax_dict3, fold, type = 'test')
                 plot_output(path, loss_vec, train_out_vec, targets, gen_z, gen_w, param_dict[fold],
                                      fig_dict4, ax_dict4, fig_dict5, ax_dict5, fold, type = 'train')
                 plot_output_locations(path, net, loss_vec, param_dict[fold], fold)
@@ -532,33 +498,10 @@ if __name__ == "__main__":
                     fig.savefig(path + 'fold' + str(fold) + '_alpha_tau_scheduler.pdf')
                     plt.close(fig)
 
-                # loss_vec.append(running_loss/10)
-                # running_loss = 0
             if epoch%100==0 or end_learning:
-                # with torch.no_grad():
-                #     test_cluster_out, test_out = net(x_test)
-                #     test_out_vec.append(test_out)
-                #     if use_MAP:
-                #         test_loss.append(criterion.compute_loss(test_cluster_out,torch.Tensor(cluster_test_targets)))
-                #         # test_loss.append(criterion.compute_loss(test_out, torch.Tensor(test_targets)))
-                #     else:
-                #         test_loss.append(criterion2(test_out, torch.Tensor(test_targets)))
-                # # if len(test_loss)>5 and test_loss[-1]>=test_loss[-2] and test_loss[-2]>=test_loss[-3] and test_loss[-3]>=test_loss[-4]:
-                # #     end_learning = True
                 if epoch != 0:
                     fig3, ax3 = plt.subplots(figsize=(8, 4 * n_splits))
                     fig3, ax3 = plot_loss(fig3, ax3, fold, epoch+1, loss_vec, lowest_loss=None)
                     fig3.tight_layout()
                     fig3.savefig(path + 'loss_fold_' + str(fold) + '.pdf')
                     plt.close(fig3)
-
-            # if end_learning:
-            #     print('end learning, fold ' + str(fold))
-            #     break
-
-
-        # if fold == 0:
-        #     plot_param_traces(path, param_dict, params2learn, true_vals, net, fig_dict, ax_dict)
-
-        # fig3, ax3 = plot_loss(fig3, ax3, fold, iterations, loss_vec, test_loss)
-
