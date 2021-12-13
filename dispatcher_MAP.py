@@ -63,6 +63,7 @@ N_bug = 20
 learn = 'all'
 case = 1
 pid_list = []
+prior_meas_var = 4
 for meas_var in [0.01, 0.1, 1, 4, 9, 16]:
     for L in [2,4,6]:
         for K in [2,4,6]:
