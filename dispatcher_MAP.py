@@ -56,7 +56,7 @@ echo $TMPDIR
 cd /PHShome/jjd65/m2m_map
 rm *.err
 rm *.out
-python3 ./main_MAP.py -learn {0} -priors {1} -case {2} -N_met {3} -N_bug {4} -N_nuisance {5} -L {6} -K {7} -meas_var {8} -prior_meas_var {9}
+python3 ./main_MAP.py -learn {0} -priors {1} -case {2} -N_met {3} -N_bug {4} -N_nuisance {5} -L {6} -K {7} -meas_var {8} -prior_meas_var {9} -seed {10}
 '''
 
 N_met = 20
@@ -65,19 +65,20 @@ learn = 'all'
 case = 1
 pid_list = []
 prior_meas_var = 4
-for meas_var in [0.01, 1]:
-    for L, K in [(2,2),(4,4),(6,6)]:
-        for priors in ['all','none']:
-            if case == 1:
-                n_nuisance = 0
-                f = open('m2m.lsf', 'w')
-                f.write(my_str.format(learn, priors, case, N_met, N_bug, n_nuisance, L, K, meas_var, prior_meas_var))
-                f.close()
-                os.system('bsub < {}'.format('m2m.lsf'))
-            else:
-                for n_nuisance in [2,4,8,16,18]:
-                    cmd = my_str.format(learn, priors, case, N_met, N_bug, n_nuisance, L, K, meas_var, prior_meas_var)
+for seed in [0,1]:
+    for meas_var in [0.01, 1]:
+        for L, K in [(2,2),(4,4),(6,6)]:
+            for priors in ['all','none']:
+                if case == 1:
+                    n_nuisance = 0
                     f = open('m2m.lsf', 'w')
-                    f.write(my_str.format(learn, priors, case, N_met, N_bug, n_nuisance))
+                    f.write(my_str.format(learn, priors, case, N_met, N_bug, n_nuisance, L, K, meas_var, prior_meas_var, seed))
                     f.close()
                     os.system('bsub < {}'.format('m2m.lsf'))
+                else:
+                    for n_nuisance in [2,4,8,16,18]:
+                        cmd = my_str.format(learn, priors, case, N_met, N_bug, n_nuisance, L, K, meas_var, prior_meas_var, seed)
+                        f = open('m2m.lsf', 'w')
+                        f.write(my_str.format(learn, priors, case, N_met, N_bug, n_nuisance))
+                        f.close()
+                        os.system('bsub < {}'.format('m2m.lsf'))

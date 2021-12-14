@@ -271,17 +271,20 @@ if __name__ == "__main__":
     parser.add_argument("-meas_var", "--meas_var", help="measurment variance", type=float)
     parser.add_argument("-prior_meas_var", "--prior_meas_var", help = "prior measurment variance", type = float)
     parser.add_argument("-iterations", "--iterations", help="number of iterations", type=float)
+    parser.add_argument("-seed", "--seed", help = "seed for random start", type = float)
     args = parser.parse_args()
 
     # Set default values
     L,K = 2,2
+    N_met, N_bug = 20,20
     params2learn = ['all']
     priors2set = ['all']
-    N_nuisance = 0
+    n_nuisance = 0
     meas_var = 0.1
     prior_meas_var = 4
     case = 'Case 1'
-    iterations = 30001
+    iterations = 20001
+    seed = 0
 
     if args.L is not None and args.K is not None:
         L, K = args.L, args.K
@@ -305,11 +308,10 @@ if __name__ == "__main__":
         prior_meas_var = args.prior_meas_var
     if args.iterations is not None:
         iterations = args.iterations
+    if args.seed is not None:
+        seed = args.seed
 
-    if not os.path.isfile('err.txt'):
-        with open('err.txt', 'w') as f:
-            f.write('')
-    n_splits = 2
+    # n_splits = 2
     use_MAP = True
     lr = 0.001
     temp_grouper, temp_selector = 'scheduled', 'scheduled'
@@ -355,23 +357,74 @@ if __name__ == "__main__":
 
     for param, dist in net.initializations.items():
         plot_distribution(dist, param, true_val = getattr(net, param), ptype = 'init', path = path)
-    kfold = KFold(n_splits = n_splits, shuffle = True)
+    # kfold = KFold(n_splits = n_splits, shuffle = True)
 
     train_x = x
     fig_dict4, ax_dict4 = {},{}
     fig_dict5, ax_dict5 = {},{}
     param_dict = {}
     tau_logspace = np.logspace(-0.5, -6, int(iterations/100))
-    for fold in np.arange(n_splits):
-        net.temp_grouper, net.temp_selector = tau_logspace[0],tau_logspace[0]
-        param_dict[fold] = {}
+    net.temp_grouper, net.temp_selector = tau_logspace[0],tau_logspace[0]
+    param_dict[seed] = {}
 
-        net.initialize(fold)
+    net.initialize(seed)
+    for name, parameter in net.named_parameters():
+        if name not in params2learn and 'all' not in params2learn:
+            setattr(net, name, nn.Parameter(torch.Tensor(true_vals[name]), requires_grad=False))
+            parameter = nn.Parameter(torch.Tensor(true_vals[name]), requires_grad=False)
+        elif name == 'w' or name == 'z' or name == 'alpha':
+            parameter = getattr(net, name + '_act')
+        elif name == 'r_bug':
+            if 'r_bug' in params2learn:
+                parameter = torch.exp(parameter)
+        elif name == 'r_met':
+            if 'r_met' in params2learn:
+                parameter = torch.exp(parameter)
+        param_dict[seed][name] = [parameter.clone().detach().numpy()]
+    # optimizer = optim.SGD(net.parameters(), lr=0.1, momentum = 0.9)
+    optimizer = optim.RMSprop(net.parameters(),lr=lr)
+    x_train, targets = x, y
+    cluster_targets = np.stack([targets[:,np.where(gen_z[:,i]==1)[0][0]] for i in np.arange(gen_z.shape[1])]).T
+    loss_vec = []
+    test_loss = []
+    test_out_vec = []
+    train_out_vec = []
+    running_loss = 0.0
+    timer = []
+    end_learning = False
+    tau_vec = []
+    alpha_tau_vec = []
+    lowest_loss_vec = []
+    ix = 0
+    for epoch in range(iterations):
+        if epoch == iterations:
+            end_learning = True
+        if isinstance(temp_grouper, str) and isinstance(temp_selector, str):
+            if epoch%100==0 and epoch>400:
+                ix = int((epoch-400)/100)
+                if ix >= len(tau_logspace):
+                    ix = -1
+                net.temp_grouper, net.temp_selector = tau_logspace[ix],tau_logspace[ix]
+            tau_vec.append(net.temp_grouper)
+        optimizer.zero_grad()
+        try:
+            cluster_outputs, loss = net(x, torch.Tensor(y))
+        except:
+            sys.exit('Epoch ' + str(epoch) + ', Error forward step')
+
+        train_out_vec.append(cluster_outputs)
+        loss_vec.append(loss.item())
+        try:
+            loss.backward()
+        except:
+            sys.exit('Epoch ' + str(epoch) + ', Error in loss.backward()')
+        try:
+            optimizer.step()
+        except:
+            sys.exit('Epoch ' + str(epoch) + ', Error in optimizer.step()')
+
         for name, parameter in net.named_parameters():
-            if name not in params2learn and 'all' not in params2learn:
-                setattr(net, name, nn.Parameter(torch.Tensor(true_vals[name]), requires_grad=False))
-                parameter = nn.Parameter(torch.Tensor(true_vals[name]), requires_grad=False)
-            elif name == 'w' or name == 'z' or name == 'alpha':
+            if name == 'w' or name == 'z' or name == 'alpha':
                 parameter = getattr(net, name + '_act')
             elif name == 'r_bug':
                 if 'r_bug' in params2learn:
@@ -379,100 +432,40 @@ if __name__ == "__main__":
             elif name == 'r_met':
                 if 'r_met' in params2learn:
                     parameter = torch.exp(parameter)
-            param_dict[fold][name] = [parameter.clone().detach().numpy()]
-        # optimizer = optim.SGD(net.parameters(), lr=0.1, momentum = 0.9)
-        optimizer = optim.RMSprop(net.parameters(),lr=lr)
-        x_train, targets = x, y
-        cluster_targets = np.stack([targets[:,np.where(gen_z[:,i]==1)[0][0]] for i in np.arange(gen_z.shape[1])]).T
-        loss_vec = []
-        test_loss = []
-        test_out_vec = []
-        train_out_vec = []
-        running_loss = 0.0
-        timer = []
-        end_learning = False
-        tau_vec = []
-        alpha_tau_vec = []
-        lowest_loss_vec = []
-        ix = 0
-        for epoch in range(iterations):
-            if epoch == iterations:
-                end_learning = True
-            if isinstance(temp_grouper, str) and isinstance(temp_selector, str):
-                if epoch%100==0 and epoch>400:
-                    ix = int((epoch-400)/100)
-                    if ix >= len(tau_logspace):
-                        ix = -1
-                    net.temp_grouper, net.temp_selector = tau_logspace[ix],tau_logspace[ix]
-                tau_vec.append(net.temp_grouper)
-            optimizer.zero_grad()
-            try:
-                cluster_outputs, loss = net(x, torch.Tensor(y))
-            except:
-                with open('err.txt', 'a') as f:
-                    f.write(path + '\n')
-                sys.exit('Epoch ' + str(epoch) + ', Error forward step')
+            param_dict[seed][name].append(parameter.clone().detach().numpy())
 
-            train_out_vec.append(cluster_outputs)
-            loss_vec.append(loss.item())
-            try:
-                loss.backward()
-            except:
-                with open('err.txt', 'a') as f:
-                    f.write(path + '\n')
-                shutil.rmtree(path)
-                sys.exit('Epoch ' + str(epoch) + ', Error in loss.backward()')
-            try:
-                optimizer.step()
-            except:
-                with open('err.txt', 'a') as f:
-                    f.write(path + '\n')
-                # shutil.rmtree(path)
-                sys.exit('Epoch ' + str(epoch) + ', Error in optimizer.step()')
+        if epoch%100==0 or end_learning:
+            if epoch != 0:
+                fig3, ax3 = plt.subplots(figsize=(8, 8))
+                fig3, ax3 = plot_loss(fig3, ax3, seed, epoch+1, loss_vec, lowest_loss=None)
+                fig3.tight_layout()
+                fig3.savefig(path + 'loss_seed_' + str(seed) + '.pdf')
+                plt.close(fig3)
 
-            for name, parameter in net.named_parameters():
-                if name == 'w' or name == 'z' or name == 'alpha':
-                    parameter = getattr(net, name + '_act')
-                elif name == 'r_bug':
-                    if 'r_bug' in params2learn:
-                        parameter = torch.exp(parameter)
-                elif name == 'r_met':
-                    if 'r_met' in params2learn:
-                        parameter = torch.exp(parameter)
-                param_dict[fold][name].append(parameter.clone().detach().numpy())
-
-            if epoch%100==0 or end_learning:
-                if epoch != 0:
-                    fig3, ax3 = plt.subplots(figsize=(8, 4 * n_splits))
-                    fig3, ax3 = plot_loss(fig3, ax3, fold, epoch+1, loss_vec, lowest_loss=None)
-                    fig3.tight_layout()
-                    fig3.savefig(path + 'loss_fold_' + str(fold) + '.pdf')
-                    plt.close(fig3)
-
-            if (epoch%5000 == 0 and epoch != 0) or end_learning:
-                print('Epoch ' + str(epoch) + ' Loss: ' + str(loss_vec[-1]))
-                print('Tau: ' + str(net.temp_grouper))
-                print('')
-                if 'epoch' not in path:
-                    path = path + 'epoch' + str(epoch) + '/'
-                else:
-                    path = path.split('epoch')[0] + 'epoch' + str(epoch) + '/'
-                if not os.path.isdir(path):
-                    os.mkdir(path)
-                fig_dict4[fold], ax_dict4[fold] = plt.subplots(y.shape[1], 1, figsize=(8, 4 * y.shape[1]))
-                fig_dict5[fold], ax_dict5[fold] = plt.subplots(gen_z.shape[1], 1, figsize=(8, 4 * gen_z.shape[1]))
-                plot_param_traces(path, param_dict[fold], params2learn, true_vals, net, fold)
-                plot_output(path, loss_vec, train_out_vec, targets, gen_z, gen_w, param_dict[fold],
-                                     fig_dict4, ax_dict4, fig_dict5, ax_dict5, fold, type = 'train')
-                plot_output_locations(path, net, loss_vec, param_dict[fold], fold)
-                if isinstance(temp_grouper, str) and len(tau_vec) > 0:
-                    fig, ax = plt.subplots()
-                    ax.semilogy(range(epoch+1), tau_vec)
-                    fig.savefig(path + 'fold' + str(fold) + '_tau_scheduler.pdf')
-                    plt.close(fig)
-                if isinstance(temp_selector, str) and len(alpha_tau_vec) > 0:
-                    fig, ax = plt.subplots()
-                    ax.semilogy(range(epoch+1), alpha_tau_vec)
-                    fig.savefig(path + 'fold' + str(fold) + '_alpha_tau_scheduler.pdf')
-                    plt.close(fig)
+        if (epoch%5000 == 0 and epoch != 0) or end_learning:
+            print('Epoch ' + str(epoch) + ' Loss: ' + str(loss_vec[-1]))
+            print('Tau: ' + str(net.temp_grouper))
+            print('')
+            if 'epoch' not in path:
+                path = path + 'epoch' + str(epoch) + '/'
+            else:
+                path = path.split('epoch')[0] + 'epoch' + str(epoch) + '/'
+            if not os.path.isdir(path):
+                os.mkdir(path)
+            fig_dict4[seed], ax_dict4[seed] = plt.subplots(y.shape[1], 1, figsize=(8, 4 * y.shape[1]))
+            fig_dict5[seed], ax_dict5[seed] = plt.subplots(gen_z.shape[1], 1, figsize=(8, 4 * gen_z.shape[1]))
+            plot_param_traces(path, param_dict[seed], params2learn, true_vals, net, seed)
+            plot_output(path, loss_vec, train_out_vec, targets, gen_z, gen_w, param_dict[seed],
+                                 fig_dict4, ax_dict4, fig_dict5, ax_dict5, seed, type = 'train')
+            plot_output_locations(path, net, loss_vec, param_dict[seed], seed)
+            if isinstance(temp_grouper, str) and len(tau_vec) > 0:
+                fig, ax = plt.subplots()
+                ax.semilogy(range(epoch+1), tau_vec)
+                fig.savefig(path + 'seed' + str(seed) + '_tau_scheduler.pdf')
+                plt.close(fig)
+            if isinstance(temp_selector, str) and len(alpha_tau_vec) > 0:
+                fig, ax = plt.subplots()
+                ax.semilogy(range(epoch+1), alpha_tau_vec)
+                fig.savefig(path + 'seed' + str(seed) + '_alpha_tau_scheduler.pdf')
+                plt.close(fig)
 
