@@ -139,7 +139,7 @@ class Model(nn.Module):
         temp = torch.clamp(self.w, min=-13.5, max=13.5)
         self.w_act = torch.softmax(temp / self.tau_transformer, 1)
         self.w_act = torch.clamp(self.w_act, min=self.temp_grouper, max=1-self.temp_grouper)
-        g = torch.matmul(torch.Tensor(x), self.w_act)
+        g = torch.matmul(x, self.w_act)
         # K
         temp = torch.clamp(self.z, min=-13.5, max=13.5)
         self.z_act = torch.softmax(temp / self.tau_transformer, 1)
@@ -259,6 +259,7 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
 
 if __name__ == "__main__":
     torch.autograd.set_detect_anomaly(True)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     parser = argparse.ArgumentParser()
     parser.add_argument("-learn", "--learn", help="params to learn", type=str, nargs='+')
     parser.add_argument("-priors", "--priors", help="priors to set", type=str, nargs='+')
@@ -276,7 +277,7 @@ if __name__ == "__main__":
 
     # Set default values
     L,K = 2,2
-    N_met, N_bug = 20,20
+    N_met, N_bug = 15,15
     params2learn = ['all']
     priors2set = ['all']
     n_nuisance = 0
@@ -351,6 +352,7 @@ if __name__ == "__main__":
 
     net = Model(gen_met_locs, gen_bug_locs, L=gen_w.shape[1], K=gen_z.shape[1],
                 tau_transformer=temp_transformer, meas_var = prior_meas_var)
+    net.to(device)
     for param, dist in net.distributions.items():
         parameter_dict = net.params[param]
         plot_distribution(dist, param, true_val = true_vals[param], ptype = 'prior', path = path, **parameter_dict)
@@ -359,7 +361,6 @@ if __name__ == "__main__":
         plot_distribution(dist, param, true_val = getattr(net, param), ptype = 'init', path = path)
     # kfold = KFold(n_splits = n_splits, shuffle = True)
 
-    train_x = x
     fig_dict4, ax_dict4 = {},{}
     fig_dict5, ax_dict5 = {},{}
     param_dict = {}
@@ -383,8 +384,8 @@ if __name__ == "__main__":
         param_dict[seed][name] = [parameter.clone().detach().numpy()]
     # optimizer = optim.SGD(net.parameters(), lr=0.1, momentum = 0.9)
     optimizer = optim.RMSprop(net.parameters(),lr=lr)
-    x_train, targets = x, y
-    cluster_targets = np.stack([targets[:,np.where(gen_z[:,i]==1)[0][0]] for i in np.arange(gen_z.shape[1])]).T
+    x = torch.Tensor(x).to(device)
+    cluster_targets = np.stack([y[:,np.where(gen_z[:,i]==1)[0][0]] for i in np.arange(gen_z.shape[1])]).T
     loss_vec = []
     test_loss = []
     test_out_vec = []
@@ -407,21 +408,12 @@ if __name__ == "__main__":
                 net.temp_grouper, net.temp_selector = tau_logspace[ix],tau_logspace[ix]
             tau_vec.append(net.temp_grouper)
         optimizer.zero_grad()
-        try:
-            cluster_outputs, loss = net(x, torch.Tensor(y))
-        except:
-            sys.exit('Epoch ' + str(epoch) + ', Error forward step')
+        cluster_outputs, loss = net(x, torch.Tensor(y))
 
         train_out_vec.append(cluster_outputs)
         loss_vec.append(loss.item())
-        try:
-            loss.backward()
-        except:
-            sys.exit('Epoch ' + str(epoch) + ', Error in loss.backward()')
-        try:
-            optimizer.step()
-        except:
-            sys.exit('Epoch ' + str(epoch) + ', Error in optimizer.step()')
+        loss.backward()
+        optimizer.step()
 
         for name, parameter in net.named_parameters():
             if name == 'w' or name == 'z' or name == 'alpha':
@@ -452,10 +444,11 @@ if __name__ == "__main__":
                 path = path.split('epoch')[0] + 'epoch' + str(epoch) + '/'
             if not os.path.isdir(path):
                 os.mkdir(path)
-            fig_dict4[seed], ax_dict4[seed] = plt.subplots(y.shape[1], 1, figsize=(8, 4 * y.shape[1]))
+            fig_dict4[seed], ax_dict4[seed] = plt.subplots(y.shape[1], 1,
+                                                           figsize=(8, 4 * y.shape[1]))
             fig_dict5[seed], ax_dict5[seed] = plt.subplots(gen_z.shape[1], 1, figsize=(8, 4 * gen_z.shape[1]))
             plot_param_traces(path, param_dict[seed], params2learn, true_vals, net, seed)
-            plot_output(path, loss_vec, train_out_vec, targets, gen_z, gen_w, param_dict[seed],
+            plot_output(path, loss_vec, train_out_vec, y, gen_z, gen_w, param_dict[seed],
                                  fig_dict4, ax_dict4, fig_dict5, ax_dict5, seed, type = 'train')
             plot_output_locations(path, net, loss_vec, param_dict[seed], seed)
             if isinstance(temp_grouper, str) and len(tau_vec) > 0:
