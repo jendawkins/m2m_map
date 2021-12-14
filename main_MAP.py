@@ -270,54 +270,41 @@ if __name__ == "__main__":
     parser.add_argument("-N_nuisance", "--N_nuisance", help="N_nuisance", type=int)
     parser.add_argument("-meas_var", "--meas_var", help="measurment variance", type=float)
     parser.add_argument("-prior_meas_var", "--prior_meas_var", help = "prior measurment variance", type = float)
+    parser.add_argument("-iterations", "--iterations", help="number of iterations", type=float)
     args = parser.parse_args()
-    # ['z','w','alpha','beta','mu_bug','mu_met','r_bug','r_met','pi_bug','pi_met']
-    # 'z' 'w' 'alpha' 'beta' 'mu_bug' 'mu_met' 'r_bug' 'r_met' 'pi_bug' 'pi_met'
+
+    # Set default values
+    L,K = 2,2
+    params2learn = ['all']
+    priors2set = ['all']
+    N_nuisance = 0
+    meas_var = 0.1
+    prior_meas_var = 4
+    case = 'Case 1'
+    iterations = 30001
+
     if args.L is not None and args.K is not None:
         L, K = args.L, args.K
-    else:
-        L, K = 6,6
     if args.learn is not None:
         params2learn = args.learn
     if args.priors is not None:
         if 'none' in args.priors:
             args.priors = []
         priors2set = args.priors
-    else:
-        priors2set = []
-    if args.learn is None and args.priors is None:
-        params2learn = ['all']
-        priors2set = ['all']
-
     if args.case is not None:
         case = 'Case ' + str(args.case)
-    else:
-        case = 'Case 1'
-
     if args.N_met is not None:
         N_met = args.N_met
-    else:
-        N_met = 20
     if args.N_bug is not None:
         N_bug = args.N_bug
-    else:
-        N_bug = 20
-    if args.N_nuisance is None:
-        if case != 'Case 2':
-            n_nuisance = 0
-        else:
-            n_nuisance = 6
-    else:
+    if args.N_nuisance is not None:
         n_nuisance = args.N_nuisance
-
-    if args.meas_var is None:
-        meas_var = 0.1
-    else:
+    if args.meas_var is not None:
         meas_var = args.meas_var
-    if args.prior_meas_var is None:
-        prior_meas_var = 4
-    else:
+    if args.prior_meas_var is not None:
         prior_meas_var = args.prior_meas_var
+    if args.iterations is not None:
+        iterations = args.iterations
 
     if not os.path.isfile('err.txt'):
         with open('err.txt', 'w') as f:
@@ -360,10 +347,6 @@ if __name__ == "__main__":
     plot_syn_data(path, x, y, gen_w, gen_z, gen_bug_locs, gen_met_locs, kmeans_bug.cluster_centers_,
                   r_bug, kmeans_met.cluster_centers_, r_met)
 
-    dataset = (x,y)
-    # net_ = Model(gen_met_locs, gen_bug_locs, L = gen_w.shape[1], K = gen_z.shape[1],
-    #              tau_transformer=temp_transformer, meas_var=prior_meas_var)
-
     net = Model(gen_met_locs, gen_bug_locs, L=gen_w.shape[1], K=gen_z.shape[1],
                 tau_transformer=temp_transformer, meas_var = prior_meas_var)
     for param, dist in net.distributions.items():
@@ -373,22 +356,14 @@ if __name__ == "__main__":
     for param, dist in net.initializations.items():
         plot_distribution(dist, param, true_val = getattr(net, param), ptype = 'init', path = path)
     kfold = KFold(n_splits = n_splits, shuffle = True)
-    iterations =15001
-
-    # z_vals = [net.z]
 
     train_x = x
-    # fig_dict2, ax_dict2 = {},{}
-    # fig_dict3, ax_dict3 = {},{}
     fig_dict4, ax_dict4 = {},{}
     fig_dict5, ax_dict5 = {},{}
     param_dict = {}
     tau_logspace = np.logspace(-0.5, -6, int(iterations/100))
-    # prior_var_vec = np.linspace(10,1, int(iterations/100))
     for fold in np.arange(n_splits):
         net.temp_grouper, net.temp_selector = tau_logspace[0],tau_logspace[0]
-        # net_.temp_grouper, net_.temp_selector = tau_logspace[0],tau_logspace[0]
-
         param_dict[fold] = {}
 
         net.initialize(fold)
@@ -408,9 +383,7 @@ if __name__ == "__main__":
         # optimizer = optim.SGD(net.parameters(), lr=0.1, momentum = 0.9)
         optimizer = optim.RMSprop(net.parameters(),lr=lr)
         x_train, targets = x, y
-        # x_test, test_targets = x[test_ids,:], y[test_ids]
         cluster_targets = np.stack([targets[:,np.where(gen_z[:,i]==1)[0][0]] for i in np.arange(gen_z.shape[1])]).T
-        # cluster_test_targets = np.stack([test_targets[:,np.where(gen_z[:,i]==1)[0][0]] for i in np.arange(gen_z.shape[1])]).T
         loss_vec = []
         test_loss = []
         test_out_vec = []
@@ -425,8 +398,6 @@ if __name__ == "__main__":
         for epoch in range(iterations):
             if epoch == iterations:
                 end_learning = True
-            # if epoch == 1000:
-            #     print('debug')
             if isinstance(temp_grouper, str) and isinstance(temp_selector, str):
                 if epoch%100==0 and epoch>400:
                     ix = int((epoch-400)/100)
@@ -470,6 +441,13 @@ if __name__ == "__main__":
                         parameter = torch.exp(parameter)
                 param_dict[fold][name].append(parameter.clone().detach().numpy())
 
+            if epoch%100==0 or end_learning:
+                if epoch != 0:
+                    fig3, ax3 = plt.subplots(figsize=(8, 4 * n_splits))
+                    fig3, ax3 = plot_loss(fig3, ax3, fold, epoch+1, loss_vec, lowest_loss=None)
+                    fig3.tight_layout()
+                    fig3.savefig(path + 'loss_fold_' + str(fold) + '.pdf')
+                    plt.close(fig3)
 
             if (epoch%5000 == 0 and epoch != 0) or end_learning:
                 print('Epoch ' + str(epoch) + ' Loss: ' + str(loss_vec[-1]))
@@ -498,10 +476,3 @@ if __name__ == "__main__":
                     fig.savefig(path + 'fold' + str(fold) + '_alpha_tau_scheduler.pdf')
                     plt.close(fig)
 
-            if epoch%100==0 or end_learning:
-                if epoch != 0:
-                    fig3, ax3 = plt.subplots(figsize=(8, 4 * n_splits))
-                    fig3, ax3 = plot_loss(fig3, ax3, fold, epoch+1, loss_vec, lowest_loss=None)
-                    fig3.tight_layout()
-                    fig3.savefig(path + 'loss_fold_' + str(fold) + '.pdf')
-                    plt.close(fig3)

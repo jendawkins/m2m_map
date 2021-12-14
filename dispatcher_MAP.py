@@ -65,7 +65,7 @@ learn = 'all'
 case = 1
 pid_list = []
 prior_meas_var = 4
-for meas_var in [0.01, 0.1, 1, 4, 9, 16]:
+for meas_var in [0.01, 1]:
     for L, K in [(2,2),(4,4),(6,6)]:
         for priors in ['all','none']:
             if case == 1:
