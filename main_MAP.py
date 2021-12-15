@@ -277,14 +277,14 @@ if __name__ == "__main__":
 
     # Set default values
     L,K = 2,2
-    N_met, N_bug = 15,15
+    N_met, N_bug = 10,10
     params2learn = ['all']
     priors2set = ['all']
     n_nuisance = 0
     meas_var = 0.1
     prior_meas_var = 4
     case = 'Case 1'
-    iterations = 20001
+    iterations = 30001
     seed = 0
 
     if args.L is not None and args.K is not None:
@@ -461,4 +461,8 @@ if __name__ == "__main__":
                 ax.semilogy(range(epoch+1), alpha_tau_vec)
                 fig.savefig(path + 'seed' + str(seed) + '_alpha_tau_scheduler.pdf')
                 plt.close(fig)
+            torch.save({'model_state_dict':net.state_dict(),
+                       'optimizer_state_dict':optimizer.state_dict(),
+                       'epoch': epoch,
+                       'loss': loss}, path + 'checkpoint.tar')
 
