@@ -20,6 +20,7 @@ def plot_syn_data(path, x, y, gen_w, gen_z, gen_bug_locs, gen_met_locs,
     for i in range(mu_bug.shape[0]):
         ix = np.where(gen_w[:, i] == 1)[0]
         p1 = ax[0].scatter(gen_bug_locs[ix, 0], gen_bug_locs[ix, 1])
+        ax[0].scatter(mu_bug[i,0], mu_bug[i,1], marker='*', color = 'k')
         circle1 = plt.Circle((mu_bug[i,0], mu_bug[i,1]), r_bug[i],
                              alpha=0.2, color=p1.get_facecolor().squeeze(),label='Cluster ' + str(i))
         # for ii in ix:
@@ -47,6 +48,7 @@ def plot_syn_data(path, x, y, gen_w, gen_z, gen_bug_locs, gen_met_locs,
     for i in range(gen_z.shape[1]):
         ix = np.where(gen_z[:, i] == 1)[0]
         p2 = ax[1].scatter(gen_met_locs[ix, 0], gen_met_locs[ix, 1])
+        ax[1].scatter(mu_met[i, 0], mu_met[i, 1], marker='*', color='k')
         ax[1].set_title('Metabolites')
         # p2 = None
         # for ii in ix:
@@ -181,10 +183,9 @@ def plot_param_traces(path, param_dict, params2learn, true_vals, net, fold):
             fig_dict[name].savefig(path + 'fold' + str(fold) + '_' + name + '_parameter_trace.pdf')
             plt.close(fig_dict[name])
 
-def plot_output_locations(path, net, loss, param_dict, fold):
+def plot_output_locations(path, net, best_mod, param_dict, fold, type = 'best'):
     fig, ax = plt.subplots(1,2, figsize = (10,5))
 
-    best_mod = np.argmin(loss)
     best_w = np.argmax(param_dict['w'][best_mod],1)
     best_mu = param_dict['mu_bug'][best_mod]
     best_r = param_dict['r_bug'][best_mod]
@@ -215,12 +216,14 @@ def plot_output_locations(path, net, loss, param_dict, fold):
         ax[1].set_aspect('equal')
 
     fig.tight_layout()
-    fig.savefig(path + 'fold' + str(fold) + '-predicted_cluster_centers.pdf')
+    fig.savefig(path + 'fold' + str(fold) + '-' + type + '-predicted_cluster_centers.pdf')
     plt.close(fig)
 
-def plot_output(path, loss, out_vec, targets, gen_z, gen_w, param_dict, fig_dict2, ax_dict2,
+def plot_output(path, best_mod, out_vec, targets, gen_z, gen_w, param_dict, fig_dict2, ax_dict2,
                 fig_dict3, ax_dict3, fold, type = 'unknown', meas_var = 0.1):
-    best_mod = np.argmin(loss)
+    fig_dict2, ax_dict2 = plt.subplots(targets.shape[1], 1,
+                                                   figsize=(8, 4 * targets.shape[1]))
+    fig_dict3, ax_dict3 = plt.subplots(gen_z.shape[1], 1, figsize=(8, 4 * gen_z.shape[1]))
     pred_clusters = out_vec[best_mod]
     pred_z = param_dict['z'][best_mod]
     preds = torch.matmul(pred_clusters + meas_var*torch.randn(pred_clusters.shape), torch.Tensor(pred_z).T)
@@ -261,17 +264,17 @@ def plot_output(path, loss, out_vec, targets, gen_z, gen_w, param_dict, fig_dict
         bins = int((total.max() - total.min())/5)
         if bins<10:
             bins = 10
-        ax_dict2[fold][met].hist(preds[:, met].detach().numpy(), range=(total.min(), total.max()), label='guess',
+        ax_dict2[met].hist(preds[:, met].detach().numpy(), range=(total.min(), total.max()), label='guess',
                                  alpha=0.5, bins = bins)
-        ax_dict2[fold][met].hist(targets[:, met], range=(total.min(), total.max()),
+        ax_dict2[met].hist(targets[:, met], range=(total.min(), total.max()),
                                  label='true', alpha=0.5, bins = bins)
-        ax_dict2[fold][met].set_title('Metabolite ' + str(met) + ', Cluster ' + str(cluster_id))
-        ax_dict2[fold][met].legend()
-        ax_dict2[fold][met].set_xlabel('Metabolite Levels')
-        ax_dict2[fold][met].set_ylabel('# Samples Per Metabolite')
-    fig_dict2[fold].tight_layout()
-    fig_dict2[fold].savefig(path + 'fold' + str(fold) + '_histograms_ ' + type + '.pdf')
-    plt.close(fig_dict2[fold])
+        ax_dict2[met].set_title('Metabolite ' + str(met) + ', Cluster ' + str(cluster_id))
+        ax_dict2[met].legend()
+        ax_dict2[met].set_xlabel('Metabolite Levels')
+        ax_dict2[met].set_ylabel('# Samples Per Metabolite')
+    fig_dict2.tight_layout()
+    fig_dict2.savefig(path + 'fold' + str(fold) + '_histograms_ ' + type + '.pdf')
+    plt.close(fig_dict2)
 
     for cluster in range(gen_z.shape[1]):
         met_ids = np.where(gen_z[:, cluster] == 1)[0]
@@ -279,17 +282,17 @@ def plot_output(path, loss, out_vec, targets, gen_z, gen_w, param_dict, fig_dict
         bins = int((total.max() - total.min()) / 5)
         if bins<10:
             bins = 10
-        ax_dict3[fold][cluster].hist(preds[:, met_ids].flatten().detach().numpy(), range=(total.min(), total.max()),
+        ax_dict3[cluster].hist(preds[:, met_ids].flatten().detach().numpy(), range=(total.min(), total.max()),
                                      label='guess', alpha=0.5, bins = bins)
-        ax_dict3[fold][cluster].hist(targets[:, met_ids].flatten(), range=(total.min(), total.max()), label='true',
+        ax_dict3[cluster].hist(targets[:, met_ids].flatten(), range=(total.min(), total.max()), label='true',
                                      alpha=0.5, bins = bins)
-        ax_dict3[fold][cluster].set_title('Cluster ' + str(cluster))
-        ax_dict3[fold][cluster].legend()
-        ax_dict3[fold][cluster].set_xlabel('Metabolite Levels')
-        ax_dict3[fold][cluster].set_ylabel('# Metabolites in Cluster x\n# Samples Per Metabolite')
-    fig_dict3[fold].tight_layout()
-    fig_dict3[fold].savefig(path + 'fold' + str(fold) + '_cluster_histograms_' + type + '.pdf')
-    plt.close(fig_dict3[fold])
+        ax_dict3[cluster].set_title('Cluster ' + str(cluster))
+        ax_dict3[cluster].legend()
+        ax_dict3[cluster].set_xlabel('Metabolite Levels')
+        ax_dict3[cluster].set_ylabel('# Metabolites in Cluster x\n# Samples Per Metabolite')
+    fig_dict3.tight_layout()
+    fig_dict3.savefig(path + 'fold' + str(fold) + '_cluster_histograms_' + type + '.pdf')
+    plt.close(fig_dict3)
 
 # def plot_output(path, test_loss, test_out_vec, test_targets, gen_z, gen_w, param_dict, fig_dict2, ax_dict2, fig_dict3, ax_dict3, fold):
 #     best_mod = np.argmin(test_loss)

@@ -67,7 +67,7 @@ pid_list = []
 prior_meas_var = 4
 for seed in [0,1]:
     for meas_var in [0.01, 1]:
-        for L, K in [(2,2),(4,4),(6,6)]:
+        for L, K in [(2,2),(3,3),(6,6)]:
             for priors in ['all','none']:
                 if case == 1:
                     n_nuisance = 0

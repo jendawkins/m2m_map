@@ -134,17 +134,18 @@ class Model(nn.Module):
 
     #@profile
     def forward(self, x, y):
-        temp = torch.clamp(self.alpha, min = -13.5, max = 13.5)
-        self.alpha_act = torch.sigmoid(temp/self.tau_transformer)
-        self.alpha_act = torch.clamp(self.alpha_act, min=self.temp_selector/4, max=1-self.temp_selector/4)
-        temp = torch.clamp(self.w, min=-13.5, max=13.5)
-        self.w_act = torch.softmax(temp / self.tau_transformer, 1)
-        self.w_act = torch.clamp(self.w_act, min=self.temp_grouper/4, max=1-self.temp_grouper/4)
+        # temp = torch.clamp(self.alpha, min = -13.5, max = 13.5)
+        epsilon = self.temp_selector/4
+        self.alpha_act = (1-2*epsilon)*torch.sigmoid(self.alpha/self.tau_transformer) + epsilon
+        # self.alpha_act = torch.clamp(self.alpha_act, min=self.temp_selector/4, max=1-self.temp_selector/4)
+        # temp = torch.clamp(self.w, min=-13.5, max=13.5)
+        self.w_act = (1-2*epsilon)*torch.softmax(self.w / self.tau_transformer, 1) + epsilon
+        # self.w_act = torch.clamp(self.w_act, min=self.temp_grouper/4, max=1-self.temp_grouper/4)
         g = torch.matmul(x, self.w_act)
         # K
-        temp = torch.clamp(self.z, min=-13.5, max=13.5)
-        self.z_act = torch.softmax(temp / self.tau_transformer, 1)
-        self.z_act = torch.clamp(self.z_act, min=self.temp_grouper/4, max=1-self.temp_grouper/4)
+        # temp = torch.clamp(self.z, min=-13.5, max=13.5)
+        self.z_act = (1-2*epsilon)*torch.softmax(self.z / self.tau_transformer, 1) + epsilon
+        # self.z_act = torch.clamp(self.z_act, min=self.temp_grouper/4, max=1-self.temp_grouper/4)
         out_clusters = self.beta[0,:] + torch.matmul(g, self.beta[1:,:]*self.alpha_act)
         loss = self.MAPloss.compute_loss(out_clusters,y)
         # out = torch.matmul(out_clusters + self.meas_var*torch.randn(out_clusters.shape), self.z_act.T)
@@ -264,7 +265,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-learn", "--learn", help="params to learn", type=str, nargs='+')
     parser.add_argument("-priors", "--priors", help="priors to set", type=str, nargs='+')
-    parser.add_argument("-case", "--case", help="case", type=int)
+    parser.add_argument("-case", "--case", help="case", type=str)
     parser.add_argument("-N_met", "--N_met", help="N_met", type=int)
     parser.add_argument("-N_bug", "--N_bug", help="N_bug", type=int)
     parser.add_argument("-L", "--L", help="bug clusters", type=int)
@@ -288,7 +289,7 @@ if __name__ == "__main__":
     case = 'Case 0'
     iterations = 10001
     seed = 1
-    load = 0
+    load = 1
 
     if args.L is not None and args.K is not None:
         L, K = args.L, args.K
@@ -299,7 +300,7 @@ if __name__ == "__main__":
             args.priors = []
         priors2set = args.priors
     if args.case is not None:
-        case = 'Case ' + str(args.case)
+        case = args.case
     if args.N_met is not None:
         N_met = args.N_met
     if args.N_bug is not None:
@@ -466,9 +467,16 @@ if __name__ == "__main__":
                                                            figsize=(8, 4 * y.shape[1]))
             fig_dict5[seed], ax_dict5[seed] = plt.subplots(gen_z.shape[1], 1, figsize=(8, 4 * gen_z.shape[1]))
             plot_param_traces(path, param_dict[seed], params2learn, true_vals, net, seed)
-            plot_output(path, loss_vec, train_out_vec, y, gen_z, gen_w, param_dict[seed],
-                                 fig_dict4, ax_dict4, fig_dict5, ax_dict5, seed, type = 'train')
-            plot_output_locations(path, net, loss_vec, param_dict[seed], seed)
+
+            best_mod = np.argmin(loss_vec)
+            plot_output(path, best_mod, train_out_vec, y, gen_z, gen_w, param_dict[seed],
+                                 fig_dict4, ax_dict4, fig_dict5, ax_dict5, seed, type = 'best_train')
+            plot_output_locations(path, net, best_mod, param_dict[seed], seed, type = 'best_train')
+            last_mod = -1
+            plot_output(path, last_mod, train_out_vec, y, gen_z, gen_w, param_dict[seed],
+                                 fig_dict4, ax_dict4, fig_dict5, ax_dict5, seed, type = 'last_train')
+            plot_output_locations(path, net, last_mod, param_dict[seed], seed, type = 'last_train')
+
             if isinstance(temp_grouper, str) and len(tau_vec) > 0:
                 fig, ax = plt.subplots()
                 ax.semilogy(range(start, epoch+1), tau_vec)
