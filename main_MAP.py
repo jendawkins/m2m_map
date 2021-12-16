@@ -21,6 +21,7 @@ import argparse
 import shutil
 import sys
 import cProfile
+import re
 
 
 class Model(nn.Module):
@@ -135,15 +136,15 @@ class Model(nn.Module):
     def forward(self, x, y):
         temp = torch.clamp(self.alpha, min = -13.5, max = 13.5)
         self.alpha_act = torch.sigmoid(temp/self.tau_transformer)
-        self.alpha_act = torch.clamp(self.alpha_act, min=self.temp_selector, max=1-self.temp_selector)
+        self.alpha_act = torch.clamp(self.alpha_act, min=self.temp_selector/2, max=1-self.temp_selector/2)
         temp = torch.clamp(self.w, min=-13.5, max=13.5)
         self.w_act = torch.softmax(temp / self.tau_transformer, 1)
-        self.w_act = torch.clamp(self.w_act, min=self.temp_grouper, max=1-self.temp_grouper)
+        self.w_act = torch.clamp(self.w_act, min=self.temp_grouper/2, max=1-self.temp_grouper/2)
         g = torch.matmul(x, self.w_act)
         # K
         temp = torch.clamp(self.z, min=-13.5, max=13.5)
         self.z_act = torch.softmax(temp / self.tau_transformer, 1)
-        self.z_act = torch.clamp(self.z_act, min=self.temp_grouper, max=1-self.temp_grouper)
+        self.z_act = torch.clamp(self.z_act, min=self.temp_grouper/2, max=1-self.temp_grouper/2)
         out_clusters = self.beta[0,:] + torch.matmul(g, self.beta[1:,:]*self.alpha_act)
         loss = self.MAPloss.compute_loss(out_clusters,y)
         # out = torch.matmul(out_clusters + self.meas_var*torch.randn(out_clusters.shape), self.z_act.T)
@@ -273,6 +274,7 @@ if __name__ == "__main__":
     parser.add_argument("-prior_meas_var", "--prior_meas_var", help = "prior measurment variance", type = float)
     parser.add_argument("-iterations", "--iterations", help="number of iterations", type=float)
     parser.add_argument("-seed", "--seed", help = "seed for random start", type = float)
+    parser.add_argument("-load", "--load", help="0 to not load model, 1 to load model", type=int)
     args = parser.parse_args()
 
     # Set default values
@@ -283,9 +285,10 @@ if __name__ == "__main__":
     n_nuisance = 0
     meas_var = 0.1
     prior_meas_var = 4
-    case = 'Case 1'
-    iterations = 30001
-    seed = 0
+    case = 'Case 0'
+    iterations = 10001
+    seed = 1
+    load = 0
 
     if args.L is not None and args.K is not None:
         L, K = args.L, args.K
@@ -311,6 +314,8 @@ if __name__ == "__main__":
         iterations = args.iterations
     if args.seed is not None:
         seed = args.seed
+    if args.load is not None:
+        load = args.load
 
     # n_splits = 2
     use_MAP = True
@@ -369,6 +374,8 @@ if __name__ == "__main__":
     param_dict[seed] = {}
 
     net.initialize(seed)
+    optimizer = optim.RMSprop(net.parameters(), lr=lr)
+    start = 0
     for name, parameter in net.named_parameters():
         if name not in params2learn and 'all' not in params2learn:
             setattr(net, name, nn.Parameter(torch.Tensor(true_vals[name]), requires_grad=False))
@@ -376,28 +383,39 @@ if __name__ == "__main__":
         elif name == 'w' or name == 'z' or name == 'alpha':
             parameter = getattr(net, name + '_act')
         elif name == 'r_bug':
-            if 'r_bug' in params2learn:
+            if 'r_bug' in params2learn or 'all' in params2learn:
                 parameter = torch.exp(parameter)
-        elif name == 'r_met':
+        elif name == 'r_met' or 'all' in params2learn:
             if 'r_met' in params2learn:
                 parameter = torch.exp(parameter)
         param_dict[seed][name] = [parameter.clone().detach().numpy()]
-    # optimizer = optim.SGD(net.parameters(), lr=0.1, momentum = 0.9)
-    optimizer = optim.RMSprop(net.parameters(),lr=lr)
+    loss_vec = []
+    train_out_vec = []
+
+    files = os.listdir(path)
+    epochs = re.findall('epoch\d+', ' '.join(os.listdir(path)))
+    if len(epochs)>0:
+        largest = max([int(num.split('epoch')[-1]) for num in epochs])
+        foldername = path + 'epoch' + str(largest) + '/'
+        if 'seed' + str(seed) + '_checkpoint.tar' in os.listdir(foldername):
+            checkpoint = torch.load(foldername + 'seed' + str(seed) + '_checkpoint.tar')
+            net.load_state_dict(checkpoint['model_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            start = checkpoint['epoch'] - 1
+            tau_logspace = np.concatenate((tau_logspace,np.logspace(-2, -5, int(iterations / 100))))
+            net.temp_grouper, net.temp_selector = 10**-2, 10**-2
+            iterations = start + iterations
+            print('model loaded')
+
     x = torch.Tensor(x).to(device)
     cluster_targets = np.stack([y[:,np.where(gen_z[:,i]==1)[0][0]] for i in np.arange(gen_z.shape[1])]).T
-    loss_vec = []
-    test_loss = []
-    test_out_vec = []
-    train_out_vec = []
-    running_loss = 0.0
     timer = []
     end_learning = False
     tau_vec = []
     alpha_tau_vec = []
     lowest_loss_vec = []
     ix = 0
-    for epoch in range(iterations):
+    for epoch in range(start, iterations):
         if epoch == iterations:
             end_learning = True
         if isinstance(temp_grouper, str) and isinstance(temp_selector, str):
@@ -419,17 +437,17 @@ if __name__ == "__main__":
             if name == 'w' or name == 'z' or name == 'alpha':
                 parameter = getattr(net, name + '_act')
             elif name == 'r_bug':
-                if 'r_bug' in params2learn:
+                if 'r_bug' in params2learn or 'all' in params2learn:
                     parameter = torch.exp(parameter)
             elif name == 'r_met':
-                if 'r_met' in params2learn:
+                if 'r_met' in params2learn or 'all' in params2learn:
                     parameter = torch.exp(parameter)
             param_dict[seed][name].append(parameter.clone().detach().numpy())
 
         if epoch%100==0 or end_learning:
             if epoch != 0:
                 fig3, ax3 = plt.subplots(figsize=(8, 8))
-                fig3, ax3 = plot_loss(fig3, ax3, seed, epoch+1, loss_vec, lowest_loss=None)
+                fig3, ax3 = plot_loss(fig3, ax3, seed, epoch+1 - start, loss_vec, lowest_loss=None)
                 fig3.tight_layout()
                 fig3.savefig(path + 'loss_seed_' + str(seed) + '.pdf')
                 plt.close(fig3)
@@ -453,16 +471,11 @@ if __name__ == "__main__":
             plot_output_locations(path, net, loss_vec, param_dict[seed], seed)
             if isinstance(temp_grouper, str) and len(tau_vec) > 0:
                 fig, ax = plt.subplots()
-                ax.semilogy(range(epoch+1), tau_vec)
+                ax.semilogy(range(start, epoch+1), tau_vec)
                 fig.savefig(path + 'seed' + str(seed) + '_tau_scheduler.pdf')
-                plt.close(fig)
-            if isinstance(temp_selector, str) and len(alpha_tau_vec) > 0:
-                fig, ax = plt.subplots()
-                ax.semilogy(range(epoch+1), alpha_tau_vec)
-                fig.savefig(path + 'seed' + str(seed) + '_alpha_tau_scheduler.pdf')
                 plt.close(fig)
             torch.save({'model_state_dict':net.state_dict(),
                        'optimizer_state_dict':optimizer.state_dict(),
-                       'epoch': epoch,
-                       'loss': loss}, path + 'checkpoint.tar')
+                       'epoch': epoch},
+                       path + 'seed' + str(seed) + '_checkpoint.tar')
 
