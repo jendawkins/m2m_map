@@ -287,7 +287,7 @@ if __name__ == "__main__":
     meas_var = 0.1
     prior_meas_var = 4
     case = 'Case 0'
-    iterations = 10001
+    iterations = 20001
     seed = 1
     load = 1
 
