@@ -136,15 +136,15 @@ class Model(nn.Module):
     def forward(self, x, y):
         temp = torch.clamp(self.alpha, min = -13.5, max = 13.5)
         self.alpha_act = torch.sigmoid(temp/self.tau_transformer)
-        self.alpha_act = torch.clamp(self.alpha_act, min=self.temp_selector/2, max=1-self.temp_selector/2)
+        self.alpha_act = torch.clamp(self.alpha_act, min=self.temp_selector/4, max=1-self.temp_selector/4)
         temp = torch.clamp(self.w, min=-13.5, max=13.5)
         self.w_act = torch.softmax(temp / self.tau_transformer, 1)
-        self.w_act = torch.clamp(self.w_act, min=self.temp_grouper/2, max=1-self.temp_grouper/2)
+        self.w_act = torch.clamp(self.w_act, min=self.temp_grouper/4, max=1-self.temp_grouper/4)
         g = torch.matmul(x, self.w_act)
         # K
         temp = torch.clamp(self.z, min=-13.5, max=13.5)
         self.z_act = torch.softmax(temp / self.tau_transformer, 1)
-        self.z_act = torch.clamp(self.z_act, min=self.temp_grouper/2, max=1-self.temp_grouper/2)
+        self.z_act = torch.clamp(self.z_act, min=self.temp_grouper/4, max=1-self.temp_grouper/4)
         out_clusters = self.beta[0,:] + torch.matmul(g, self.beta[1:,:]*self.alpha_act)
         loss = self.MAPloss.compute_loss(out_clusters,y)
         # out = torch.matmul(out_clusters + self.meas_var*torch.randn(out_clusters.shape), self.z_act.T)
