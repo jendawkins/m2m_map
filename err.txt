@@ -35,3 +35,11 @@ results_MAP/Case_1/meas_var0d1-prior_mvar4-lr0d001learn_w_r_bug_mu_bug-priors_//
 results_MAP/Case_1/meas_var0d1-prior_mvar4-lr0d001learn_z_r_met_mu_met-priors_z_r_met_mu_met//N_bug6-N_met6-N_nuisance0-L2-K2/epoch1000/epoch2000/
 results_MAP/Case_1/meas_var0d1-prior_mvar4-lr0d001learn_z_r_met_mu_met_w_r_bug_mu_bug-priors_z_r_met_mu_met_w_r_bug_mu_bug//N_bug6-N_met6-N_nuisance0-L2-K2/epoch1000/
 results_MAP/Case_1/meas_var0d1-prior_mvar4-lr0d001learn_z_r_met_mu_met-priors_//N_bug6-N_met6-N_nuisance0-L2-K2/epoch1000/
+results_MAP/Case_1/meas_var0d1-prior_mvar4-lr0d001learn_z_r_met_mu_met-priors_//N_bug6-N_met6-N_nuisance0-L2-K2/epoch5000/
+results_MAP/Case_1/meas_var0d1-prior_mvar4-lr0d001learn_w_r_bug_mu_bug-priors_w_r_bug_mu_bug//N_bug6-N_met6-N_nuisance0-L2-K2/epoch5000/
+results_MAP/Case_1/meas_var0d1-prior_mvar4-lr0d001learn_w_r_bug_mu_bug-priors_//N_bug6-N_met6-N_nuisance0-L2-K2/epoch5000/
+results_MAP/Case_1/meas_var0d1-prior_mvar4-lr0d001learn_z_r_met_mu_met-priors_z_r_met_mu_met//N_bug6-N_met6-N_nuisance0-L2-K2/epoch5000/
+results_MAP/Case_1/meas_var0d1-prior_mvar4-lr0d001learn_z_r_met_mu_met_w_r_bug_mu_bug-priors_z_r_met_mu_met_w_r_bug_mu_bug//N_bug6-N_met6-N_nuisance0-L2-K2/
+results_MAP/Case_1/meas_var0d1-prior_mvar4-lr0d001learn_all-priors_all//N_bug20-N_met20-N_nuisance0-L4-K4/
+results_MAP/Case_1/meas_var0d1-prior_mvar4-lr0d001learn_r_bug_mu_bug-priors_r_bug_mu_bug//N_bug6-N_met6-N_nuisance0-L6-K6/epoch5000/
+results_MAP/Case_1/meas_var0d1-prior_mvar4-lr0d001learn_r_met_mu_met-priors_r_met_mu_met//N_bug6-N_met6-N_nuisance0-L6-K6/epoch5000/

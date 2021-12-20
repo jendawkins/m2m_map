@@ -233,9 +233,9 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
         for i in range(N_bug):
             mu = (i*cluster_disparity)/(N_bug*cluster_disparity + 10)
             var = mu + 10
-            p = mu/var
-            n = (mu**2)/(var - mu)
-            X[:, i] = st.nbinom(n,p).rvs(size=(N_samples))
+            mu = np.means(cluster_means)
+            v = (mu * (1 - mu)) / meas_var
+            X[:, i] = st.beta(mu * v, (1 - mu) * v).rvs(size=(N_samples))
     else:
         for i in range(N_bug_clusters):
             ixs = np.where(w_gen[:,i]==1)[0]
@@ -273,20 +273,20 @@ if __name__ == "__main__":
     parser.add_argument("-N_nuisance", "--N_nuisance", help="N_nuisance", type=int)
     parser.add_argument("-meas_var", "--meas_var", help="measurment variance", type=float)
     parser.add_argument("-prior_meas_var", "--prior_meas_var", help = "prior measurment variance", type = float)
-    parser.add_argument("-iterations", "--iterations", help="number of iterations", type=float)
-    parser.add_argument("-seed", "--seed", help = "seed for random start", type = float)
+    parser.add_argument("-iterations", "--iterations", help="number of iterations", type=int)
+    parser.add_argument("-seed", "--seed", help = "seed for random start", type = int)
     parser.add_argument("-load", "--load", help="0 to not load model, 1 to load model", type=int)
     args = parser.parse_args()
 
     # Set default values
-    L,K = 2,2
+    L,K = 3,3
     N_met, N_bug = 10,10
     params2learn = ['all']
-    priors2set = ['all']
+    priors2set = []
     n_nuisance = 0
-    meas_var = 0.1
-    prior_meas_var = 4
-    case = 'Case 0'
+    meas_var = 0.001
+    prior_meas_var = 4.0
+    case = '1'
     iterations = 20001
     seed = 1
     load = 1
@@ -357,8 +357,11 @@ if __name__ == "__main__":
                   r_bug, kmeans_met.cluster_centers_, r_met)
 
     net = Model(gen_met_locs, gen_bug_locs, L=gen_w.shape[1], K=gen_z.shape[1],
-                tau_transformer=temp_transformer, meas_var = prior_meas_var)
+                tau_transformer=temp_transformer, meas_var = prior_meas_var, compute_loss_for=priors2set)
     net.to(device)
+
+    net_ = Model(gen_met_locs, gen_bug_locs, L = gen_w.shape[1], K = gen_z.shape[1], tau_transformer=temp_transformer,
+                 meas_var = prior_meas_var, compute_loss_for=priors2set)
     for param, dist in net.distributions.items():
         parameter_dict = net.params[param]
         plot_distribution(dist, param, true_val = true_vals[param], ptype = 'prior', path = path, **parameter_dict)
@@ -372,9 +375,12 @@ if __name__ == "__main__":
     param_dict = {}
     tau_logspace = np.logspace(-0.5, -6, int(iterations/100))
     net.temp_grouper, net.temp_selector = tau_logspace[0],tau_logspace[0]
+    net_.temp_grouper, net_.temp_selector = tau_logspace[0], tau_logspace[0]
     param_dict[seed] = {}
 
     net.initialize(seed)
+    net_.initialize(seed)
+
     optimizer = optim.RMSprop(net.parameters(), lr=lr)
     start = 0
     for name, parameter in net.named_parameters():
@@ -407,8 +413,27 @@ if __name__ == "__main__":
             net.temp_grouper, net.temp_selector = 10**-2, 10**-2
             iterations = start + iterations
             print('model loaded')
+        else:
+            print('no model loaded')
+    else:
+        print('no model loaded')
 
     x = torch.Tensor(x).to(device)
+    for name, parameter in net_.named_parameters():
+        if 'r' in name:
+            setattr(net_, name, nn.Parameter(torch.log(torch.Tensor(true_vals[name])), requires_grad=False))
+        elif 'pi' in name:
+            val = torch.Tensor(true_vals[name])
+            val = torch.log(val) + torch.log(torch.exp(val).sum())
+            setattr(net_, name, nn.Parameter(val, requires_grad=False))
+        else:
+            setattr(net_, name, nn.Parameter(torch.Tensor(true_vals[name]), requires_grad=False))
+    net_.z_act, net_.w_act = torch.softmax(net_.z / 0.1, 1), torch.softmax(net_.w / 0.1, 1)
+    net_.alpha[net_.alpha == 0] = -1
+    net_.alpha_act = torch.sigmoid(net_.alpha / 0.1)
+    # lowest_loss = criterion_.compute_loss(torch.Tensor(targets), torch.Tensor(targets))
+    _, lowest_loss = net_(x, torch.Tensor(y))
+    print('Lowest Loss:' + str(lowest_loss.item()))
     cluster_targets = np.stack([y[:,np.where(gen_z[:,i]==1)[0][0]] for i in np.arange(gen_z.shape[1])]).T
     timer = []
     end_learning = False
@@ -425,6 +450,12 @@ if __name__ == "__main__":
                 if ix >= len(tau_logspace):
                     ix = -1
                 net.temp_grouper, net.temp_selector = tau_logspace[ix],tau_logspace[ix]
+                net_.temp_grouper, net_.temp_selector = tau_logspace[ix], tau_logspace[ix]
+                _, lowest_loss = net_(x, torch.Tensor(y))
+                print('Lowest Loss:' + str(lowest_loss.item()))
+                print('tau:' + str(net.temp_grouper))
+            # net.temp_grouper, net.temp_selector = 1/(epoch+1), 1/(epoch+1)
+            # net_.temp_grouper, net_.temp_selector = 1 / (epoch + 1), 1 / (epoch + 1)
             tau_vec.append(net.temp_grouper)
         optimizer.zero_grad()
         cluster_outputs, loss = net(x, torch.Tensor(y))
@@ -453,7 +484,7 @@ if __name__ == "__main__":
                 fig3.savefig(path + 'loss_seed_' + str(seed) + '.pdf')
                 plt.close(fig3)
 
-        if (epoch%5000 == 0 and epoch != 0) or end_learning:
+        if (epoch%1000 == 0 and epoch != 0) or end_learning:
             print('Epoch ' + str(epoch) + ' Loss: ' + str(loss_vec[-1]))
             print('Tau: ' + str(net.temp_grouper))
             print('')
