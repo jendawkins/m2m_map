@@ -23,6 +23,24 @@ from torch.distributions.normal import Normal
 import torch.nn as nn
 import time
 
+def euc_dist(x,y):
+    return np.sqrt(np.sum([(x[i] - y[i])**2 for i in range(len(x))]))
+
+def pairwise_eval(guess, true):
+    guess_dict = {i:guess[i] for i in range(len(guess))}
+    true_dict = {i: true[i] for i in range(len(guess))}
+    pairs = list(itertools.combinations(range(len(guess)),2))
+    tp_fp = np.sum([math.comb(np.sum(guess==i),2) for i in np.unique(guess)])
+    tp = len([i for i in range(len(pairs)) if guess_dict[pairs[i][0]]==guess_dict[pairs[i][1]] and
+              true_dict[pairs[i][0]]==true_dict[pairs[i][1]]])
+    fp = tp_fp - tp
+    tn = len([i for i in range(len(pairs)) if guess_dict[pairs[i][0]]!=guess_dict[pairs[i][1]] and
+              true_dict[pairs[i][0]]!=true_dict[pairs[i][1]]])
+    tn_fn = math.comb(len(guess),2) - tp_fp
+    fn = tn_fn - tn
+    ri = (tp + tn)/(tp + fp + tn + fn)
+    return tp, fp, tn, fn, ri
+
 def get_one_hot(x,l=None):
     if l is None:
         l = len(np.unique(x))

@@ -70,7 +70,7 @@ class MultDist():
 
     def pdf(self, zw, a):
         first = self.concrete.pdf(zw)
-        second = first*torch.stack([zw[l]*torch.exp(self.mvn[l].log_prob(a)) for l in range(len(self.mvn))]).sum(0)
+        second = first*(torch.stack([zw[l]*torch.exp(self.mvn[l].log_prob(a)) for l in range(len(self.mvn))]).sum(0))
         return second
 
     def make_pdf_table(self, a_samples = None, size = 100):

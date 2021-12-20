@@ -11,6 +11,7 @@ from torch.distributions.gamma import Gamma
 from torch.distributions.categorical import Categorical
 from torch.distributions.bernoulli import Bernoulli
 from torch.distributions.normal import Normal
+from torch.distributions.negative_binomial import NegativeBinomial
 import torch.nn as nn
 import time
 import numpy as np
@@ -56,13 +57,16 @@ class MAPloss():
 
     def w_loss(self):
         # start = time.time()
+        con = BinaryConcrete(1, self.net.temp_grouper)
+        nb = NegativeBinomial(self.net.mu_bug.shape[0] * 2, torch.Tensor([0.1]))
         mvn = [MultivariateNormal(self.net.mu_bug[k,:], (torch.eye(self.net.mu_bug.shape[1]) *
                                                                torch.exp(self.net.r_bug[k])).float()) for k in np.arange(self.net.mu_bug.shape[0])]
-        con = Concrete(self.net.pi_bug, self.net.temp_grouper)
-        multi = MultDist(con, mvn)
-        log_probs = torch.stack([-torch.log(multi.pdf(self.net.w_act[m,:], torch.Tensor(self.net.microbe_locs[m,:])))
-                                 for m in np.arange(self.net.microbe_locs.shape[0])]).sum()
-        self.loss_dict['w'] = log_probs
+        mvn_probs = torch.log(torch.stack([(torch.stack([self.net.w_act[m,l] * torch.exp(mvn[l].log_prob(torch.Tensor(self.net.microbe_locs[m, :]))) for l in
+                               range(len(mvn))]).sum(0)) for m in np.arange(self.net.microbe_locs.shape[0])]))
+        nb_probs = nb.log_prob(self.net.w_act.sum(1))
+        bc_probs = torch.log(con.pdf(self.net.w_act)).sum(1)
+        total = (mvn_probs + nb_probs + bc_probs).sum()
+        self.loss_dict['w'] = total
         # print('Loss Method 2:' + str(time.time() - start))
 
     def w_loss2(self):
@@ -92,8 +96,8 @@ class MAPloss():
         # if torch.isnan(self.loss_dict['r_bug']).any() or torch.isinf(self.loss_dict['r_bug']).any():
         #     print('debug')
 
-    def pi_bug_loss(self):
-        self.loss_dict['pi_bug'] = (torch.Tensor(1 - np.array(self.net.params['pi_bug']['epsilon'])) * torch.softmax(self.net.pi_bug,1)).sum()
+    # def pi_bug_loss(self):
+    #     self.loss_dict['pi_bug'] = (torch.Tensor(1 - np.array(self.net.params['pi_bug']['epsilon'])) * torch.softmax(self.net.pi_bug,1)).sum()
 
     def z_loss(self):
         # start = time.time()

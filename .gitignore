@@ -13,3 +13,4 @@ alpha_hist/
 alpha_probs/
 .DS_Store
 results_MAP/.DS_Store
+*.tar

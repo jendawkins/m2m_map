@@ -68,10 +68,10 @@ class Model(nn.Module):
         self.distributions['mu_bug'] = MultivariateNormal(torch.zeros(self.embedding_dim), self.params['mu_bug']['var']*torch.eye(self.embedding_dim))
         self.distributions['r_bug'] = Gamma(self.params['r_bug']['dof'], self.params['r_bug']['scale'])
         self.distributions['r_met'] = Gamma(self.params['r_met']['dof'], self.params['r_met']['scale'])
-        self.params['pi_met'] = {'epsilon': [1]*self.K}
-        self.params['pi_bug'] = {'epsilon': [1]*self.L}
+        self.params['pi_met'] = {'epsilon': [2]*self.K}
+        # self.params['pi_bug'] = {'epsilon': [2]*self.L}
         self.distributions['pi_met'] = Dirichlet(torch.Tensor(self.params['pi_met']['epsilon']))
-        self.distributions['pi_bug'] = Dirichlet(torch.Tensor(self.params['pi_bug']['epsilon']))
+        # self.distributions['pi_bug'] = Dirichlet(torch.Tensor(self.params['pi_bug']['epsilon']))
         self.range_dict = {}
         for param, dist in self.distributions.items():
             sampler = dist.sample([100])
@@ -99,7 +99,7 @@ class Model(nn.Module):
         self.initializations['mu_bug'] = self.distributions['mu_bug']
         self.initializations['r_met'] = self.distributions['r_met']
         self.initializations['r_bug'] = self.distributions['r_bug']
-        self.initializations['pi_bug'] = self.distributions['pi_bug']
+        # self.initializations['pi_bug'] = self.distributions['pi_bug']
         self.initializations['pi_met'] = self.distributions['pi_met']
         self.initializations['z'] = Normal(0,1)
         self.initializations['w'] = Normal(0,1)
@@ -118,19 +118,19 @@ class Model(nn.Module):
         r_temp = self.initializations['r_bug'].sample([self.L])
         self.r_bug = nn.Parameter(torch.log(1/r_temp), requires_grad=True)
 
-        self.pi_bug = nn.Parameter(self.initializations['pi_bug'].sample(), requires_grad=True).unsqueeze(0)
+        # self.pi_bug = nn.Parameter(self.initializations['pi_bug'].sample(), requires_grad=True).unsqueeze(0)
         self.pi_met = nn.Parameter(self.initializations['pi_met'].sample(), requires_grad=True).unsqueeze(0)
 
         # cat_bug = Categorical(self.pi_bug).sample([self.microbe_locs.shape[0]])
         # temp = nn.functional.one_hot(cat_bug.squeeze(), num_classes = self.L).type(torch.FloatTensor)
         self.w = nn.Parameter(self.initializations['w'].sample([self.microbe_locs.shape[0], self.L]), requires_grad=True)
-        self.w_act = torch.softmax(self.w,1)
+        self.w_act = torch.sigmoid(self.w / self.temp_grouper)
 
         # cat_met = Categorical(self.pi_met).sample([self.met_locs.shape[0]])
         # temp = nn.functional.one_hot(cat_met.squeeze(), num_classes = self.K).type(torch.FloatTensor)
         # self.range_dict['z'] = (-0.1,1.1)
         self.z = nn.Parameter(self.initializations['z'].sample([self.met_locs.shape[0], self.K]), requires_grad=True)
-        self.z_act = torch.softmax(self.z, 1)
+        self.z_act = torch.softmax(self.z/self.temp_grouper, 1)
 
     #@profile
     def forward(self, x, y):
@@ -139,7 +139,7 @@ class Model(nn.Module):
         self.alpha_act = (1-2*epsilon)*torch.sigmoid(self.alpha/self.tau_transformer) + epsilon
         # self.alpha_act = torch.clamp(self.alpha_act, min=self.temp_selector/4, max=1-self.temp_selector/4)
         # temp = torch.clamp(self.w, min=-13.5, max=13.5)
-        self.w_act = (1-2*epsilon)*torch.softmax(self.w / self.tau_transformer, 1) + epsilon
+        self.w_act = (1-2*epsilon)*torch.sigmoid(self.w / self.tau_transformer) + epsilon
         # self.w_act = torch.clamp(self.w_act, min=self.temp_grouper/4, max=1-self.temp_grouper/4)
         g = torch.matmul(x, self.w_act)
         # K
@@ -177,15 +177,14 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
     np.fill_diagonal(dist_met, 0)
 
     choose_from = np.arange(N_bug)
+    left_over = choose_from
     bug_gp_ids = []
-    for n in range(N_bug_clusters-1):
-        # num_choose = np.random.choice(np.arange(2,len(choose_from)-(N_bug_clusters-n)),1)
-        # if num_choose < 5 and case == 'Case 2':
-        #     num_choose = 5
-        chosen = np.random.choice(choose_from, int(N_met/N_met_clusters),replace = False)
-        choose_from = list(set(choose_from) - set(chosen))
+    for n in range(N_bug_clusters):
+        chosen = np.random.choice(choose_from, int((N_met/N_met_clusters)*1.5),replace = False)
+        left_over = list(set(left_over) - set(chosen))
         bug_gp_ids.append(chosen)
-    bug_gp_ids.append(np.array(choose_from))
+    if len(left_over)!=0:
+        bug_gp_ids[-1] = np.concatenate((bug_gp_ids[-1],np.array(left_over)))
     dist_bug = np.zeros((N_bug, N_bug))
     for i, gp in enumerate(bug_gp_ids):
         for met in gp:
@@ -210,7 +209,7 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
     km_bug = KMeans(n_clusters = N_bug_clusters, random_state=state)
     kmeans_bug = km_bug.fit(bug_locs)
     u_bug_gen = kmeans_bug.cluster_centers_
-    w_gen = np.array([get_one_hot(kk, l = N_bug_clusters) for kk in kmeans_bug.labels_])
+    w_gen = np.array([get_one_hot(bg, bug_locs.shape[0]) for bg in bug_gp_ids]).T
 
     betas = np.random.normal(0, np.sqrt(beta_var), size = (N_bug_clusters+1, N_met_clusters))
     alphas = st.bernoulli(0.5).rvs((N_bug_clusters, N_met_clusters))
@@ -282,7 +281,7 @@ if __name__ == "__main__":
     L,K = 3,3
     N_met, N_bug = 10,10
     params2learn = ['all']
-    priors2set = []
+    priors2set = ['all']
     n_nuisance = 0
     meas_var = 0.001
     prior_meas_var = 4.0
@@ -341,7 +340,7 @@ if __name__ == "__main__":
         os.mkdir(path)
 
     if 'all' in priors2set:
-        priors2set = ['z','w','alpha','beta','mu_bug','mu_met','r_bug','r_met','pi_bug','pi_met']
+        priors2set = ['z','w','alpha','beta','mu_bug','mu_met','r_bug','r_met','pi_met']
     x, y, gen_beta, gen_alpha, gen_w, gen_z, gen_bug_locs, gen_met_locs, kmeans_bug, kmeans_met = generate_synthetic_data(
         case=case, N_met = N_met, N_bug = N_bug, num_nuisance=n_nuisance, N_met_clusters = K, N_bug_clusters = L,
         meas_var = meas_var)
@@ -381,7 +380,6 @@ if __name__ == "__main__":
     net.initialize(seed)
     net_.initialize(seed)
 
-    optimizer = optim.RMSprop(net.parameters(), lr=lr)
     start = 0
     for name, parameter in net.named_parameters():
         if name not in params2learn and 'all' not in params2learn:
@@ -398,6 +396,7 @@ if __name__ == "__main__":
         param_dict[seed][name] = [parameter.clone().detach().numpy()]
     loss_vec = []
     train_out_vec = []
+    optimizer = optim.RMSprop(net.parameters(), lr=lr)
 
     files = os.listdir(path)
     epochs = re.findall('epoch\d+', ' '.join(os.listdir(path)))

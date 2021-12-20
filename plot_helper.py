@@ -17,12 +17,12 @@ def plot_syn_data(path, x, y, gen_w, gen_z, gen_bug_locs, gen_met_locs,
                   mu_bug, r_bug, mu_met, r_met):
     fig, ax = plt.subplots(1, 2, figsize = (10,5))
     fig2, ax2 = plt.subplots(2, 1)
+    p1 = ax[0].scatter(gen_bug_locs[:, 0], gen_bug_locs[:, 1], color = 'k')
     for i in range(mu_bug.shape[0]):
         ix = np.where(gen_w[:, i] == 1)[0]
-        p1 = ax[0].scatter(gen_bug_locs[ix, 0], gen_bug_locs[ix, 1])
-        ax[0].scatter(mu_bug[i,0], mu_bug[i,1], marker='*', color = 'k')
+        p1 = ax[0].scatter(mu_bug[i,0], mu_bug[i,1], marker='*')
         circle1 = plt.Circle((mu_bug[i,0], mu_bug[i,1]), r_bug[i],
-                             alpha=0.2, color=p1.get_facecolor().squeeze(),label='Cluster ' + str(i))
+                             alpha=0.2, label='Detector ' + str(i),color=p1.get_facecolor().squeeze())
         # for ii in ix:
         #     ax[0].text(gen_bug_locs[ii,0], gen_bug_locs[ii,1], 'Bug ' + str(ii))
         ax[0].add_patch(circle1)
@@ -31,7 +31,7 @@ def plot_syn_data(path, x, y, gen_w, gen_z, gen_bug_locs, gen_met_locs,
         bins = int((x.max() - x.min()) / 5)
         if bins<=10:
             bins = 10
-        ax2[0].hist(x[:, ix].flatten(), range=(x.min(), x.max()), label='Cluster ' + str(i), alpha=0.5, bins = bins)
+        ax2[0].hist(x[:, ix].flatten(), range=(x.min(), x.max()), label='Detector ' + str(i), alpha=0.5, bins = bins)
         ax2[0].set_xlabel('Microbial relative abundances')
         ax2[0].set_ylabel('# Microbes in Cluster x\n# Samples Per Microbe', fontsize = 10)
         ax2[0].set_title('Microbes')
@@ -48,7 +48,7 @@ def plot_syn_data(path, x, y, gen_w, gen_z, gen_bug_locs, gen_met_locs,
     for i in range(gen_z.shape[1]):
         ix = np.where(gen_z[:, i] == 1)[0]
         p2 = ax[1].scatter(gen_met_locs[ix, 0], gen_met_locs[ix, 1])
-        ax[1].scatter(mu_met[i, 0], mu_met[i, 1], marker='*', color='k')
+        ax[1].scatter(mu_met[i, 0], mu_met[i, 1], marker='*', color=p2.get_facecolor().squeeze())
         ax[1].set_title('Metabolites')
         # p2 = None
         # for ii in ix:
@@ -236,8 +236,13 @@ def plot_output(path, best_mod, out_vec, targets, gen_z, gen_w, param_dict, fig_
     index_names = ['Metabolite ' + str(i) for i in np.arange(gen_z.shape[0])]
     df = pd.DataFrame(df_dict, index = index_names)
     df.to_csv(path + 'fold' + str(fold) + '_metab_cluster_' + type + '.csv')
+    z_guess = np.argmax(pred_z, 1)
 
-    z_guess = np.argmax(pred_z,1)
+    tp, fp, tn, fn, ri = pairwise_eval(z_guess, df_dict['True'])
+    pairwise_cf = {'Same cluster': {'Predicted Same cluster': tp, 'Predicted Different cluster': fn},
+                   'Different cluster':{'Predicted Same cluster': fp, 'Predicted Different cluster': tn}}
+    pd.DataFrame(pairwise_cf).T.to_csv(
+        path + 'fold' + str(fold) + '_PairwiseConfusionMetabs_' + type + '_' + str(np.round(ri,3)).replace('.', 'd') + '.csv')
     cf = confusion_matrix(df_dict['True'], z_guess)
     pd.DataFrame(cf, index = ['# in Cluster ' + str(zz) for zz in range(cf.shape[0])],
                  columns = ['# Predicted in Cluster ' + str(zz) for zz in range(cf.shape[1])]).to_csv(
@@ -253,6 +258,13 @@ def plot_output(path, best_mod, out_vec, targets, gen_z, gen_w, param_dict, fig_
     df.to_csv(path + 'fold' + str(fold) + '_bug_cluster_' + type + '.csv')
 
     w_guess = np.argmax(pred_w,1)
+
+    tp, fp, tn, fn, ri = pairwise_eval(w_guess, df_dict['True'])
+    pairwise_cf = {'Same cluster': {'Predicted Same cluster': tp, 'Predicted Different cluster': fn},
+                   'Different cluster':{'Predicted Same cluster': fp, 'Predicted Different cluster': tn}}
+    pd.DataFrame(pairwise_cf).T.to_csv(
+        path + 'fold' + str(fold) + '_PairwiseConfusionBug_' + type + '_' + str(np.round(ri,3)).replace('.', 'd') + '.csv')
+
     cf = confusion_matrix(df_dict['True'], w_guess)
     pd.DataFrame(cf, index = ['# in Cluster ' + str(zz) for zz in range(cf.shape[0])],
                  columns = ['# Predicted in Cluster ' + str(zz) for zz in range(cf.shape[1])]).to_csv(
