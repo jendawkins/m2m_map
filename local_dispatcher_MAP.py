@@ -1,8 +1,8 @@
 import subprocess
-from main_MAP import *
+from main_MAPv0 import *
 max_load = 10
 
-my_str = "python3 ./main_MAP.py -learn {0} -priors {1} -case {2} -N_met {3} -N_bug {4} -N_nuisance {5} -L {6} -K {7} -meas_var {8} -prior_meas_var {9} -seed {10}"
+my_str = "python3 ./main_MAPv0.py -learn {0} -priors {1} -case {2} -N_met {3} -N_bug {4} -N_nuisance {5} -L {6} -K {7} -meas_var {8} -prior_meas_var {9} -seed {10}"
 
 N_met = 10
 N_bug = 10

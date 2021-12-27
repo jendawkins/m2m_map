@@ -1,4 +1,4 @@
-from main_MAP import *
+from main_MAPv0 import *
 
 alphas = np.logspace(0,-5, 100)
 taus = np.logspace(-2, -10, 10)

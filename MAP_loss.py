@@ -58,14 +58,15 @@ class MAPloss():
     def w_loss(self):
         # start = time.time()
         con = BinaryConcrete(1, self.net.temp_grouper)
-        nb = NegativeBinomial(self.net.mu_bug.shape[0] * 2, torch.Tensor([0.1]))
-        mvn = [MultivariateNormal(self.net.mu_bug[k,:], (torch.eye(self.net.mu_bug.shape[1]) *
-                                                               torch.exp(self.net.r_bug[k])).float()) for k in np.arange(self.net.mu_bug.shape[0])]
-        mvn_probs = torch.log(torch.stack([(torch.stack([self.net.w_act[m,l] * torch.exp(mvn[l].log_prob(torch.Tensor(self.net.microbe_locs[m, :]))) for l in
-                               range(len(mvn))]).sum(0)) for m in np.arange(self.net.microbe_locs.shape[0])]))
+        # set counts to be 2*num_detectors
+        nb = NegativeBinomial(self.net.mu_bug.shape[1] * 2, torch.Tensor([0.1]))
+        # mvn = [MultivariateNormal(self.net.mu_bug[k,:], (torch.eye(self.net.mu_bug.shape[1]) *
+        #                                                        torch.exp(self.net.r_bug[k])).float()) for k in np.arange(self.net.mu_bug.shape[0])]
+        # mvn_probs = torch.log(torch.stack([(torch.stack([self.net.w_act[m,l] * torch.exp(mvn[l].log_prob(torch.Tensor(self.net.microbe_locs[m, :]))) for l in
+        #                        range(len(mvn))]).sum(0)) for m in np.arange(self.net.microbe_locs.shape[0])]))
         nb_probs = nb.log_prob(self.net.w_act.sum(1))
         bc_probs = torch.log(con.pdf(self.net.w_act)).sum(1)
-        total = (mvn_probs + nb_probs + bc_probs).sum()
+        total = (nb_probs + bc_probs).sum()
         self.loss_dict['w'] = total
         # print('Loss Method 2:' + str(time.time() - start))
 
