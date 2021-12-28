@@ -204,7 +204,7 @@ if __name__ == "__main__":
     n_nuisance = 0
     meas_var = 0.001
     prior_meas_var = 4.0
-    case = '1'
+    case = '12-28-21'
     iterations = 30001
     seed = 0
     load = 0
