@@ -21,7 +21,7 @@ my_str = '''
 
 # Please make a copy of this script for your own modifications
 
-#BSUB -q normal
+#BSUB -q gpu
 
 # Some important variables to check (Can be removed later)
 echo '---PROCESS RESOURCE LIMITS---'
@@ -56,7 +56,7 @@ echo $TMPDIR
 cd /PHShome/jjd65/m2m_map
 rm *.err
 rm *.out
-python3 ./main_MAPv0.py -learn {0} -priors {1} -case {2} -N_met {3} -N_bug {4} -N_nuisance {5} -L {6} -K {7} -meas_var {8} -prior_meas_var {9} -seed {10}
+python3 ./main_MAPv0.py -learn {0} -priors {1} -N_met {3} -N_bug {4} -L {6} -K {7} -meas_var {8} -prior_meas_var {9} -seed {10}
 '''
 
 N_met = 20
@@ -68,8 +68,7 @@ for seed in [0,1]:
     for meas_var in [0.01, 1]:
         for L, K in [(2,2),(3,3),(6,6)]:
             for priors in ['all','none']:
-                n_nuisance = 0
                 f = open('m2m.lsf', 'w')
-                f.write(my_str.format(learn, priors, N_met, N_bug, n_nuisance, L, K, meas_var, prior_meas_var, seed))
+                f.write(my_str.format(learn, priors, N_met, N_bug, L, K, meas_var, prior_meas_var, seed))
                 f.close()
                 os.system('bsub < {}'.format('m2m.lsf'))
