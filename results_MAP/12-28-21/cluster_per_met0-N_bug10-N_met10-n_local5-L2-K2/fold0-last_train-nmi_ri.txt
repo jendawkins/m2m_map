@@ -1,0 +1,2 @@
+Epoch 1001: NMI 1.0, RI 1.0
+Epoch 2001: NMI 1.0, RI 1.0

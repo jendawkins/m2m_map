@@ -152,8 +152,8 @@ class Model(nn.Module):
 
     #@profile
     def forward(self, x, y):
-        kappa = torch.stack([((self.mu_bug - torch.tensor(self.microbe_locs[m,:])).pow(2)).sum(-1) for m in range(self.microbe_locs.shape[0])])
-        self.u = torch.sigmoid((self.r_bug - kappa)/self.temp_grouper)
+        kappa = torch.stack([torch.sqrt(((self.mu_bug - torch.tensor(self.microbe_locs[m,:])).pow(2)).sum(-1)) for m in range(self.microbe_locs.shape[0])])
+        self.u = torch.sigmoid((torch.exp(self.r_bug) - kappa)/self.temp_grouper)
         epsilon = self.temp_selector / 4
         if len(self.u.shape)>2:
             g = torch.einsum('ij,jkl->ikl', x, self.u.float())
@@ -294,6 +294,7 @@ if __name__ == "__main__":
     net_ = Model(gen_met_locs, gen_bug_locs, K = gen_z.shape[1], L= L, num_local_clusters=n_local_clusters,
                  tau_transformer=temp_transformer,
                  meas_var = prior_meas_var, compute_loss_for=priors2set, cluster_per_met_cluster = cluster_per_met_cluster)
+
     for param, dist in net.distributions.items():
         parameter_dict = net.params[param]
         plot_distribution(dist, param, true_val = true_vals[param], ptype = 'prior', path = path, **parameter_dict)

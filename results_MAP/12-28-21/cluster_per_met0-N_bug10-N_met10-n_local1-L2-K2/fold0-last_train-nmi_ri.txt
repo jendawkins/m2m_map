@@ -1,0 +1,2 @@
+Epoch 1001: NMI 0.619, RI 0.8
+Epoch 2001: NMI 1.0, RI 1.0
