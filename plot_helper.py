@@ -11,22 +11,25 @@ from sklearn.cluster import KMeans
 from helper import *
 from sklearn.model_selection import KFold
 from scipy.special import logit
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, normalized_mutual_info_score
 from draw_layers import *
 from matplotlib.pyplot import cm
 
 
-def plot_syn_data(path, x, y, gen_w, gen_z, gen_bug_locs, gen_met_locs,
+def plot_syn_data(path, x, y, gen_z, gen_bug_locs, gen_met_locs,
                   mu_bug, r_bug, mu_met, r_met, gen_u):
     fig, ax = plt.subplots(1, 2, figsize = (10,5))
     fig2, ax2 = plt.subplots(2, 1)
     p1 = ax[0].scatter(gen_bug_locs[:, 0], gen_bug_locs[:, 1], color = 'k')
     for i in range(gen_bug_locs.shape[0]):
         ax[0].text(gen_bug_locs[i, 0], gen_bug_locs[i, 1], str(i))
+    if len(mu_bug.shape)>2:
+        mu_bug = mu_bug[0,:,:]
+        r_bug = r_bug[0,:]
     for i in range(mu_bug.shape[0]):
         p1 = ax[0].scatter(mu_bug[i,0], mu_bug[i,1], marker='*')
         circle1 = plt.Circle((mu_bug[i,0], mu_bug[i,1]), r_bug[i],
-                             alpha=0.2, label='Detector ' + str(i),color=p1.get_facecolor().squeeze())
+                             alpha=0.2, label='Cluster ' + str(i),color=p1.get_facecolor().squeeze())
         # for ii in ix:
         #     ax[0].text(gen_bug_locs[ii,0], gen_bug_locs[ii,1], 'Bug ' + str(ii))
         ax[0].add_patch(circle1)
@@ -38,7 +41,7 @@ def plot_syn_data(path, x, y, gen_w, gen_z, gen_bug_locs, gen_met_locs,
         # dixs = np.where(gen_w[i, :] == 1)[0]
         # for dix in dixs:
         ix = np.where(gen_u[:, i]==1)[0]
-        ax2[0].hist(x[:, ix].flatten(), range=(x.min(), x.max()), label='Detector ' + str(i), alpha=0.5, bins = bins)
+        ax2[0].hist(x[:, ix].flatten(), range=(x.min(), x.max()), label='Cluster ' + str(i), alpha=0.5, bins = bins)
         ax2[0].set_xlabel('Microbial relative abundances')
         ax2[0].set_ylabel('# Microbes in Cluster x\n# Samples Per Microbe', fontsize = 10)
         ax2[0].set_title('Microbes')
@@ -185,37 +188,94 @@ def plot_param_traces(path, param_dict, params2learn, true_vals, net, fold):
             plt.close(fig_dict[name])
 
 def plot_output_locations(path, net, best_mod, param_dict, fold, type = 'best'):
-
-    best_w = param_dict['w'][best_mod]
+    if 'w' not in param_dict.keys():
+        best_w = param_dict['u'][best_mod]
+    else:
+        best_w = param_dict['w'][best_mod]
     best_mu = param_dict['mu_bug'][best_mod]
     best_r = param_dict['r_bug'][best_mod]
-    fig, ax = plt.subplots(1,param_dict['w'][0].shape[1], figsize=(5*param_dict['w'][0].shape[1], 5))
-    # iterate over rules
-    for i in range(param_dict['w'][0].shape[0]):
-        ax[i].scatter(net.microbe_locs[:, 0], net.microbe_locs[:, 1], facecolors='none', edgecolors='r')
-        for ii in range(net.microbe_locs.shape[0]):
-            ax[i].text(net.microbe_locs[ii, 0], net.microbe_locs[ii, 1],
-                       str(ii))
-        ix = range(param_dict['w'][0].shape[1])
-        ix_on = np.where(best_w[i,:]>0.5)[0]
-        ax[i].set_title('Microbes, Rule ' + str(i))
-        color = cm.rainbow(np.linspace(0, 1, param_dict['w'][0].shape[1]))
-        ct = 0
-        for ixx in ix:
-            if ixx in ix_on:
-                ax[i].text(best_mu[i, ixx, 0], best_mu[i, ixx, 1], 'detector ' + str(ixx) + ' ON')
-                ax[i].scatter(best_mu[i, ixx, 0], best_mu[i, ixx, 1], marker='*', color=color[ixx])
-            else:
-                ax[i].text(best_mu[i, ixx, 0], best_mu[i, ixx, 1], 'detector ' + str(ixx) + ' OFF')
-                ax[i].scatter(best_mu[i, ixx, 0], best_mu[i, ixx, 1], marker='o', color = color[ixx])
-            circle2 = plt.Circle((best_mu[i, ixx,0], best_mu[i, ixx,1]), best_r[i, ixx],
-                         alpha=0.2, label = 'Detector ' + str(ixx), color = color[ixx])
+    if best_w.shape[0]==net.microbe_locs.shape[0] and best_w.shape[1]==net.L:
+        if best_w.shape[-1] == net.K and len(best_w.shape)>2:
+            fig, ax = plt.subplots(net.K, 1, figsize = (5*net.K, 5))
+            for k in range(net.K):
+                for i in range(best_w.shape[1]):
+                    ix = np.where(best_w[:,i, k] > 0.5)[0]
+                    p2 = ax[k].scatter(net.microbe_locs[ix, 0], net.microbe_locs[ix, 1])
+                    ax[k].scatter(best_mu[i, 0, k], best_mu[i, 1, k], marker='*', color=p2.get_facecolor().squeeze())
+                    ax[k].text(best_mu[i, 0, k], best_mu[i, 1, k], 'predicted\ncluster ' + str(i) + ' mean')
+                    ax[k].set_title('Microbe clusters for metabolite cluster ' + str(k))
+                    circle2 = plt.Circle((best_mu[i, 0, k], best_mu[i, 1, k]), best_r[i, k],
+                                         alpha=0.2, color=p2.get_facecolor().squeeze(), label='Cluster ' + str(i))
+                    ax[k].add_patch(circle2)
+                    ax[k].set_aspect('equal')
+        else:
+            fig, ax = plt.subplots(figsize=(5, 5))
+            for i in range(best_w.shape[1]):
+                ix = np.where(best_w[:,i] > 0.5)[0]
+                p2 = ax.scatter(net.microbe_locs[ix, 0], net.microbe_locs[ix, 1])
+                ax.scatter(best_mu[i, 0], best_mu[i, 1], marker='*', color=p2.get_facecolor().squeeze())
+                ax.text(best_mu[i, 0], best_mu[i, 1], 'predicted\ncluster ' + str(i) + ' mean')
+                ax.set_title('Microbes')
+                circle2 = plt.Circle((best_mu[i, 0], best_mu[i, 1]), best_r[i],
+                                     alpha=0.2, color=p2.get_facecolor().squeeze(), label='Cluster ' + str(i))
+                ax.add_patch(circle2)
+                ax.set_aspect('equal')
 
-            ax[i].add_patch(circle2)
-        ax[i].set_aspect('equal')
-        ax[i].legend()
+    else:
+        if best_w.shape[-1] == net.K and len(best_w.shape) > 2:
+            fig, ax = plt.subplots(net.K, best_w.shape[1], figsize=(5 * best_w.shape[1], 5* net.K))
+            for k in range(net.K):
+                for i in range(best_w.shape[0]):
+                    ax[k,i].scatter(net.microbe_locs[:, 0], net.microbe_locs[:, 1], facecolors='none', edgecolors='r')
+                    for ii in range(net.microbe_locs.shape[0]):
+                        ax[k,i].text(net.microbe_locs[ii, 0], net.microbe_locs[ii, 1],
+                                   str(ii))
+                    ix = range(best_w.shape[1])
+                    ix_on = np.where(best_w[i, :, k] > 0.5)[0]
+                    ax[k,i].set_title('Microbes, Outer Cluster ' + str(i) + ', Metab Cluster ' + str(k))
+                    color = cm.rainbow(np.linspace(0, 1, best_w.shape[1]))
+                    ct = 0
+                    for ixx in ix:
+                        if ixx in ix_on:
+                            ax[k,i].text(best_mu[i, ixx, k, 0], best_mu[i, ixx, k, 1], 'detector ' + str(ixx) + ' ON')
+                            ax[k,i].scatter(best_mu[i, ixx, 0], best_mu[i, ixx, k, 1], marker='*', color=color[ixx])
+                        else:
+                            ax[k,i].text(best_mu[i, ixx,k,  0], best_mu[i, ixx, k, 1], 'detector ' + str(ixx) + ' OFF')
+                            ax[k,i].scatter(best_mu[i, ixx, k, 0], best_mu[i, ixx, k, 1], marker='o', color=color[ixx])
+                        circle2 = plt.Circle((best_mu[i, ixx, k, 0], best_mu[i, ixx, k, 1]), best_r[i, ixx],
+                                             alpha=0.2, label='Detector ' + str(ixx), color=color[ixx])
+
+                        ax[k,i].add_patch(circle2)
+                    ax[k,i].set_aspect('equal')
+                    ax[k,i].legend()
+        else:
+            fig, ax = plt.subplots(1, best_w.shape[1], figsize=(5 * best_w.shape[1], 5))
+            # iterate over rules
+            for i in range(best_w.shape[0]):
+                ax[i].scatter(net.microbe_locs[:, 0], net.microbe_locs[:, 1], facecolors='none', edgecolors='r')
+                for ii in range(net.microbe_locs.shape[0]):
+                    ax[i].text(net.microbe_locs[ii, 0], net.microbe_locs[ii, 1],
+                               str(ii))
+                ix = range(best_w.shape[1])
+                ix_on = np.where(best_w[i, :] > 0.5)[0]
+                ax[i].set_title('Microbes, Rule ' + str(i))
+                color = cm.rainbow(np.linspace(0, 1, best_w.shape[1]))
+                ct = 0
+                for ixx in ix:
+                    if ixx in ix_on:
+                        ax[i].text(best_mu[i, ixx, 0], best_mu[i, ixx, 1], 'detector ' + str(ixx) + ' ON')
+                        ax[i].scatter(best_mu[i, ixx, 0], best_mu[i, ixx, 1], marker='*', color=color[ixx])
+                    else:
+                        ax[i].text(best_mu[i, ixx, 0], best_mu[i, ixx, 1], 'detector ' + str(ixx) + ' OFF')
+                        ax[i].scatter(best_mu[i, ixx, 0], best_mu[i, ixx, 1], marker='o', color=color[ixx])
+                    circle2 = plt.Circle((best_mu[i, ixx, 0], best_mu[i, ixx, 1]), best_r[i, ixx],
+                                         alpha=0.2, label='Detector ' + str(ixx), color=color[ixx])
+
+                    ax[i].add_patch(circle2)
+                ax[i].set_aspect('equal')
+                ax[i].legend()
     fig.tight_layout()
-    fig.savefig(path + 'fold' + str(fold) + '-' + type + '-bug-rule' + str(i) + '.pdf')
+    fig.savefig(path + 'fold' + str(fold) + '-' + type + '-bug_clusters.pdf')
     plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(5, 5))
@@ -260,7 +320,7 @@ def plot_rules_detectors_tree(path, net, best_mod, param_dict, microbe_locs, see
     # weights to convert from 10 outputs to 4 (decimal digits to their binary representation)
     network.draw(path + 'seed' + str(seed) + '-rules_detectors.pdf')
 
-def plot_output(path, best_mod, out_vec, targets, gen_z,  param_dict, fold, type = 'unknown', meas_var = 0.1):
+def plot_output(path, path_orig, best_mod, out_vec, targets, gen_z,  param_dict, fold, type = 'unknown', meas_var = 0.1):
 
     fig_dict2, ax_dict2 = plt.subplots(targets.shape[1], 1,
                                                    figsize=(8, 4 * targets.shape[1]))
@@ -270,24 +330,23 @@ def plot_output(path, best_mod, out_vec, targets, gen_z,  param_dict, fold, type
     preds = torch.matmul(pred_clusters + meas_var*torch.randn(pred_clusters.shape), torch.Tensor(pred_z).T)
     total = np.concatenate([targets, preds.detach().numpy()])
 
-    df_dict= {}
-    for col in np.arange(pred_z.shape[1]):
-        df_dict['Cluster ' + str(col) + ' Prediction'] = np.round(pred_z[:,col],3)
-    df_dict['True'] = np.argmax(gen_z,1)
-    index_names = ['Metabolite ' + str(i) for i in np.arange(gen_z.shape[0])]
-    df = pd.DataFrame(df_dict, index = index_names)
-    df.to_csv(path + 'fold' + str(fold) + '_metab_cluster_' + type + '.csv')
+    true = np.argmax(gen_z,1)
     z_guess = np.argmax(pred_z, 1)
-
-    tp, fp, tn, fn, ri = pairwise_eval(z_guess, df_dict['True'])
+    nmi = np.round(normalized_mutual_info_score(true, z_guess), 3)
+    tp, fp, tn, fn, ri = pairwise_eval(z_guess, true)
     pairwise_cf = {'Same cluster': {'Predicted Same cluster': tp, 'Predicted Different cluster': fn},
                    'Different cluster':{'Predicted Same cluster': fp, 'Predicted Different cluster': tn}}
     pd.DataFrame(pairwise_cf).T.to_csv(
         path + 'fold' + str(fold) + '_PairwiseConfusionMetabs_' + type + '_' + str(np.round(ri,3)).replace('.', 'd') + '.csv')
-    cf = confusion_matrix(df_dict['True'], z_guess)
-    pd.DataFrame(cf, index = ['# in Cluster ' + str(zz) for zz in range(cf.shape[0])],
-                 columns = ['# Predicted in Cluster ' + str(zz) for zz in range(cf.shape[1])]).to_csv(
-        path + 'fold' + str(fold) + '_ConfusionMetabs_' + type +'.csv')
+
+    if not os.path.isfile(path_orig + 'fold' + str(fold) + '-' + type +'-nmi_ri.txt'):
+        with open(path_orig + 'fold' + str(fold) + '-' + type +'-nmi_ri.txt', 'w') as f:
+            f.write('Epoch ' + str(len(out_vec)) + ': NMI ' + str(nmi) + ', RI ' + str(np.round(ri,3)) + '\n')
+    else:
+        with open(path_orig + 'fold' + str(fold) + '-' + type +'-nmi_ri.txt', 'a') as f:
+            f.write('Epoch ' + str(len(out_vec)) + ': NMI ' + str(nmi) + ', RI ' + str(np.round(ri,3)) + '\n')
+
+
 
     for met in range(targets.shape[1]):
         cluster_id = np.where(gen_z[met, :] == 1)[0]
