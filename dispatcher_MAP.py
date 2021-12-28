@@ -56,7 +56,7 @@ echo $TMPDIR
 cd /PHShome/jjd65/m2m_map
 rm *.err
 rm *.out
-python3 ./main_MAP.py -learn {0} -priors {1} -N_met {3} -N_bug {4} -L {6} -K {7} -meas_var {8} -prior_meas_var {9} -seed {10}
+python3 ./main_MAP.py -learn {0} -priors {1} -N_met {2} -N_bug {3} -L {4} -K {5} -meas_var {6} -prior_meas_var {7} -seed {8}
 '''
 
 N_met = 20
