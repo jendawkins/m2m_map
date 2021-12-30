@@ -333,18 +333,21 @@ def plot_output(path, path_orig, best_mod, out_vec, targets, gen_z,  param_dict,
     true = np.argmax(gen_z,1)
     z_guess = np.argmax(pred_z, 1)
     nmi = np.round(normalized_mutual_info_score(true, z_guess), 3)
-    tp, fp, tn, fn, ri = pairwise_eval(z_guess, true)
-    pairwise_cf = {'Same cluster': {'Predicted Same cluster': tp, 'Predicted Different cluster': fn},
-                   'Different cluster':{'Predicted Same cluster': fp, 'Predicted Different cluster': tn}}
-    pd.DataFrame(pairwise_cf).T.to_csv(
-        path + 'fold' + str(fold) + '_PairwiseConfusionMetabs_' + type + '_' + str(np.round(ri,3)).replace('.', 'd') + '.csv')
-
+    try:
+        tp, fp, tn, fn, ri = pairwise_eval(z_guess, true)
+        pairwise_cf = {'Same cluster': {'Predicted Same cluster': tp, 'Predicted Different cluster': fn},
+                       'Different cluster':{'Predicted Same cluster': fp, 'Predicted Different cluster': tn}}
+        pd.DataFrame(pairwise_cf).T.to_csv(
+            path + 'fold' + str(fold) + '_PairwiseConfusionMetabs_' + type + '_' + str(np.round(ri,3)).replace('.', 'd') + '.csv')
+        ri = str(np.round(ri, 3))
+    except:
+        ri = 'NA'
     if not os.path.isfile(path_orig + 'fold' + str(fold) + '-' + type +'-nmi_ri.txt'):
         with open(path_orig + 'fold' + str(fold) + '-' + type +'-nmi_ri.txt', 'w') as f:
-            f.write('Epoch ' + str(len(out_vec)) + ': NMI ' + str(nmi) + ', RI ' + str(np.round(ri,3)) + '\n')
+            f.write('Epoch ' + str(len(out_vec)) + ': NMI ' + str(nmi) + ', RI ' + ri + '\n')
     else:
         with open(path_orig + 'fold' + str(fold) + '-' + type +'-nmi_ri.txt', 'a') as f:
-            f.write('Epoch ' + str(len(out_vec)) + ': NMI ' + str(nmi) + ', RI ' + str(np.round(ri,3)) + '\n')
+            f.write('Epoch ' + str(len(out_vec)) + ': NMI ' + str(nmi) + ', RI ' + ri + '\n')
 
 
 
