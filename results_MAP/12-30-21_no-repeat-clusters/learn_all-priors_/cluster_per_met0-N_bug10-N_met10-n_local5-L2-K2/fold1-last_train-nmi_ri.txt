@@ -1,7 +1,5 @@
 Epoch 1001: NMI 1.0, RI 1.0
 Epoch 2001: NMI 1.0, RI 1.0
-Epoch 1001: NMI 1.0, RI 1.0
-Epoch 2001: NMI 1.0, RI 1.0
 Epoch 3001: NMI 1.0, RI 1.0
 Epoch 4001: NMI 1.0, RI 1.0
 Epoch 5001: NMI 1.0, RI 1.0
@@ -20,13 +18,3 @@ Epoch 17001: NMI 1.0, RI 1.0
 Epoch 18001: NMI 1.0, RI 1.0
 Epoch 19001: NMI 1.0, RI 1.0
 Epoch 20001: NMI 1.0, RI 1.0
-Epoch 21001: NMI 1.0, RI 1.0
-Epoch 22001: NMI 1.0, RI 1.0
-Epoch 23001: NMI 1.0, RI 1.0
-Epoch 24001: NMI 1.0, RI 1.0
-Epoch 25001: NMI 1.0, RI 1.0
-Epoch 26001: NMI 1.0, RI 1.0
-Epoch 27001: NMI 1.0, RI 1.0
-Epoch 28001: NMI 1.0, RI 1.0
-Epoch 29001: NMI 1.0, RI 1.0
-Epoch 30001: NMI 1.0, RI 1.0

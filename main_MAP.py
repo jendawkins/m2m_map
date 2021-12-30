@@ -192,23 +192,25 @@ if __name__ == "__main__":
     parser.add_argument("-load", "--load", help="0 to not load model, 1 to load model", type=int)
     parser.add_argument("-cluster_per_met_cluster", "--cluster_per_met_cluster",
                         help="whether or not to have each metabolite cluster have it's own clustering paradigm", type=int)
+    parser.add_argument("-rep_clust", "--rep_clust", help = "whether or not bugs are in more than one cluster")
     args = parser.parse_args()
 
     # Set default values
     K=2
     n_local_clusters = 1
-    L = 3
-    N_met, N_bug = 6,6
+    L = 2
+    N_met, N_bug = 10,10
     params2learn = ['all']
     priors2set = ['all']
     n_nuisance = 0
     meas_var = 0.001
     prior_meas_var = 4.0
-    case = '12-28-21'
+    case = '12-30-21_no-repeat-clusters'
     iterations = 30001
     seed = 0
     load = 0
     cluster_per_met_cluster = 0
+    repeat_clusters = 0
 
     if args.K is not None:
         K = args.K
@@ -242,6 +244,8 @@ if __name__ == "__main__":
         load = args.load
     if args.cluster_per_met_cluster is not None:
         cluster_per_met_cluster = args.cluster_per_met_cluster
+    if args.rep_clust is not None:
+        repeat_clusters = args.rep_clust
 
     # n_splits = 2
     use_MAP = True
@@ -276,8 +280,8 @@ if __name__ == "__main__":
     x, y, gen_beta, gen_alpha, gen_w, gen_z, gen_bug_locs, gen_met_locs, mu_bug, \
     mu_met, r_bug, r_met, gen_u = generate_synthetic_data(
         N_met = N_met, N_bug = N_bug, N_met_clusters = K, N_local_clusters = n_local_clusters,
-        N_bug_clusters = L,
-        meas_var = meas_var, cluster_per_met_cluster= cluster_per_met_cluster)
+        N_bug_clusters = L,meas_var = meas_var, cluster_per_met_cluster= cluster_per_met_cluster,
+        repeat_clusters= repeat_clusters)
 
     true_vals = {'y':y, 'beta':gen_beta, 'alpha':gen_alpha, 'mu_bug': mu_bug,
                  'mu_met': mu_met, 'u': gen_u,

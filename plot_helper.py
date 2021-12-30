@@ -249,7 +249,7 @@ def plot_output_locations(path, net, best_mod, param_dict, fold, type = 'best'):
                     ax[k,i].set_aspect('equal')
                     ax[k,i].legend()
         else:
-            fig, ax = plt.subplots(1, best_w.shape[1], figsize=(5 * best_w.shape[1], 5))
+            fig, ax = plt.subplots(1, best_w.shape[0], figsize=(5 * best_w.shape[0], 5))
             # iterate over rules
             for i in range(best_w.shape[0]):
                 ax[i].scatter(net.microbe_locs[:, 0], net.microbe_locs[:, 1], facecolors='none', edgecolors='r')

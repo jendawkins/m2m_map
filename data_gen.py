@@ -5,7 +5,7 @@ from plot_helper import *
 
 def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clusters = 2, N_bug_clusters = 2, N_local_clusters=4, state = 1,
                             beta_var = 2, cluster_disparity = 100, meas_var = 0.001,
-                            cluster_per_met_cluster = 1):
+                            cluster_per_met_cluster = 1, repeat_clusters = True):
     np.random.seed(state)
     choose_from = np.arange(N_met)
     met_gp_ids = []
@@ -35,7 +35,10 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
     bug_gp_ids = []
     for n in range(N_clusters_by_dist-1):
         chosen = np.random.choice(choose_from, int((N_bug/N_clusters_by_dist)),replace = False)
-        choose_from = np.array(list(set(choose_from) - set(chosen)) + list(np.random.choice(chosen, 1)))
+        if repeat_clusters:
+            choose_from = np.array(list(set(choose_from) - set(chosen)) + list(np.random.choice(chosen, 1)))
+        else:
+            choose_from = np.array(list(set(choose_from) - set(chosen)))
         bug_gp_ids.append(chosen)
     bug_gp_ids.append(choose_from)
     dist_bug = np.zeros((N_bug, N_bug))
@@ -138,19 +141,20 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
 
 
 if __name__ == "__main__":
-    N_bug = 6
-    N_met = 6
+    N_bug = 10
+    N_met = 10
     K=2
     L=2
     n_local_clusters = 1
     cluster_per_met_cluster = 0
-    meas_var = 0.01
+    meas_var = 0.001
     path = 'test/'
+    repeat_clusters = 0
 
     x, y, gen_beta, gen_alpha, gen_w, gen_z, gen_bug_locs, gen_met_locs, mu_bug, \
     mu_met, r_bug, r_met, gen_u = generate_synthetic_data(
         N_met = N_met, N_bug = N_bug, N_met_clusters = K, N_local_clusters = n_local_clusters, N_bug_clusters = L,
-        meas_var = meas_var, cluster_per_met_cluster= cluster_per_met_cluster)
+        meas_var = meas_var, cluster_per_met_cluster= cluster_per_met_cluster, repeat_clusters=repeat_clusters)
 
     bug_clusters = np.argmax(gen_w,1)
     met_clusters = np.argmax(gen_z, 1)
