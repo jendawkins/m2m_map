@@ -56,7 +56,7 @@ echo $TMPDIR
 cd /PHShome/jjd65/m2m_map
 rm *.err
 rm *.out
-python3 ./main_MAP.py -learn {0} -priors {1} -N_met {2} -N_bug {3} -L {4} -K {5} -meas_var {6} -prior_meas_var {7} -seed {8}
+python3 ./main_MAP.py -learn {0} -priors {1} -N_met {2} -N_bug {3} -L {4} -K {5} -meas_var {6} -prior_meas_var {7} -seed {8} -rep_clust {9}
 '''
 
 N_met = 20
@@ -67,8 +67,9 @@ prior_meas_var = 4
 for seed in [0,1]:
     for meas_var in [0.01, 1]:
         for L, K in [(2,2),(3,3),(6,6)]:
-            for priors in ['all','none']:
-                f = open('m2m.lsf', 'w')
-                f.write(my_str.format(learn, priors, N_met, N_bug, L, K, meas_var, prior_meas_var, seed))
-                f.close()
-                os.system('bsub < {}'.format('m2m.lsf'))
+            for repeat_clusters in [0, 1]:
+                for priors in ['all','none']:
+                    f = open('m2m.lsf', 'w')
+                    f.write(my_str.format(learn, priors, N_met, N_bug, L, K, meas_var, prior_meas_var, seed, repeat_clusters))
+                    f.close()
+                    os.system('bsub < {}'.format('m2m.lsf'))

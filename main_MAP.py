@@ -205,7 +205,9 @@ if __name__ == "__main__":
     n_nuisance = 0
     meas_var = 0.001
     prior_meas_var = 4.0
-    case = '12-30-21_no-repeat-clusters'
+    case = '12-30-21-noRepeats'
+    if args.rep_clust:
+        case = '12-30-21-wRepeats'
     iterations = 30001
     seed = 0
     load = 0
