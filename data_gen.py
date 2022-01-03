@@ -136,7 +136,19 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
     if N_local_clusters > 1:
         temp_w = np.repeat(w_gen[:,:,np.newaxis], N_samples, axis = 2)
         b = np.sum(temp_w*b.T,1).T
-    y = (betas[0,:] + b@(betas[1:,:]*alphas))@z_gen.T + meas_var*np.random.normal(0,1, size = (X.shape[0], z_gen.shape[0]))
+
+    y = np.zeros((N_samples, N_met))
+    for k in range(z_gen.shape[1]):
+        vals = np.zeros((N_samples, N_met))
+        ix = np.where(z_gen[:,k]==1)[0]
+        cluster_vals = betas[0,k] + b@(betas[1:,k]*alphas[:,k])
+        vals[:, ix] = np.random.normal(cluster_vals/len(ix), 0.1, size = (len(ix), N_samples)).T
+        which_sum = np.random.choice(ix,1)[0]
+        vals[:, which_sum] = 0
+        total_sum = np.sum(vals,1)
+        vals[:, which_sum] = cluster_vals - total_sum
+        y[:, ix] = vals[:, ix]
+
     return X, y, betas, alphas, w_gen, z_gen, bug_locs, met_locs, mu_bug, mu_met, r_bug, r_met, temp
 
 
@@ -156,6 +168,7 @@ if __name__ == "__main__":
         N_met = N_met, N_bug = N_bug, N_met_clusters = K, N_local_clusters = n_local_clusters, N_bug_clusters = L,
         meas_var = meas_var, cluster_per_met_cluster= cluster_per_met_cluster, repeat_clusters=repeat_clusters)
 
+    # r_scale_met =
     bug_clusters = np.argmax(gen_w,1)
     met_clusters = np.argmax(gen_z, 1)
 

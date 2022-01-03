@@ -48,11 +48,11 @@ class Model(nn.Module):
 
         range_x = np.max(self.met_locs[:,0]) - np.min(self.met_locs[:,0])
         range_y = np.max(self.met_locs[:,1]) - np.min(self.met_locs[:,1])
-        self.r_scale_met = np.sqrt(range_x**2 + range_y**2) / self.K
+        self.r_scale_met = np.sqrt(range_x**2 + range_y**2) / (self.K*2)
 
         range_x = np.max(self.microbe_locs[:,0]) - np.min(self.microbe_locs[:,0])
         range_y = np.max(self.microbe_locs[:,1]) - np.min(self.microbe_locs[:,1])
-        self.r_scale_bug = np.sqrt(range_x**2 + range_y**2) / self.L
+        self.r_scale_bug = np.sqrt(range_x**2 + range_y**2) / (self.L*2)
 
         self.params = {}
         self.distributions = {}
@@ -60,7 +60,7 @@ class Model(nn.Module):
         self.params['alpha'] = {'loc': self.alpha_loc, 'temp':self.temp_selector}
         self.params['mu_met'] = {'mean': 0, 'var': self.mu_var_met}
         self.params['mu_bug'] = {'mean': 0, 'var': self.mu_var_bug}
-        self.params['r_bug'] = {'dof': 2, 'scale': self.r_scale_bug}
+        self.params['r_bug'] = {'dof': 3, 'scale': self.r_scale_bug}
         self.params['r_met'] = {'dof': 2, 'scale': self.r_scale_met}
         self.params['thresh'] = {'low': 10, 'high':1000}
         self.distributions['beta'] = Normal(self.params['beta']['mean'], self.params['beta']['scale'])
@@ -82,9 +82,9 @@ class Model(nn.Module):
             range = sampler.max() - sampler.min()
             self.range_dict[param] = (sampler.min() - range * 0.1, sampler.max() + range * 0.1)
             if 'r_met' in param:
-                self.range_dict[param] = (0, np.sum(np.sqrt(self.met_locs[:,0]**2 + self.met_locs[:,1]**2)))
+                self.range_dict[param] = (0, np.mean(np.sqrt(self.met_locs[:,0]**2 + self.met_locs[:,1]**2)))
             if 'r_bug' in param:
-                self.range_dict[param] = (0, np.sum(np.sqrt(self.microbe_locs[:,0]**2 + self.microbe_locs[:,1]**2)))
+                self.range_dict[param] = (0, np.mean(np.sqrt(self.microbe_locs[:,0]**2 + self.microbe_locs[:,1]**2)))
 
         self.range_dict['w'] = (-0.1,1.1)
         self.range_dict['z'] = (-0.1,1.1)
@@ -98,8 +98,8 @@ class Model(nn.Module):
         self.initializations = {}
         self.initializations['beta'] = self.distributions['beta']
         self.initializations['alpha'] = Normal(0,1)
-        self.initializations['mu_met'] = self.distributions['mu_met']
-        self.initializations['mu_bug'] = self.distributions['mu_bug']
+        self.initializations['mu_met'] = self.met_locs
+        self.initializations['mu_bug'] = self.microbe_locs
         self.initializations['r_met'] = self.distributions['r_met']
         self.initializations['r_bug'] = self.distributions['r_bug']
         # self.initializations['pi_bug'] = self.distributions['pi_bug']
@@ -113,21 +113,22 @@ class Model(nn.Module):
         self.alpha_act = torch.sigmoid(self.alpha / self.temp_selector)
 
         if self.cluster_per_met_cluster:
-            self.mu_bug = nn.Parameter(
-                self.initializations['mu_bug'].sample([self.L, self.num_local_clusters, self.K]).squeeze(),
-                requires_grad=True)
-            r_temp = self.initializations['r_bug'].sample([self.L, self.num_local_clusters, self.K]).squeeze()
-            self.r_bug = nn.Parameter(torch.log(1 / r_temp), requires_grad=True)
+            ix = np.concatenate([np.random.choice(range(len(self.initializations['mu_bug'])), self.L, replace = False) for
+                  ii in range(self.num_local_clusters*self.K)])
+            self.mu_bug = nn.Parameter(torch.Tensor(self.microbe_locs[ix,:]).view(self.L, self.num_local_clusters, self.K, -1).squeeze())
+            r_temp = self.r_scale_bug*torch.ones((self.L, self.num_local_clusters, self.K)).squeeze()
+            self.r_bug = nn.Parameter(1 / torch.log(r_temp), requires_grad=True)
             if self.num_local_clusters <= 1:
                 self.w = self.initializations['w'].sample([self.microbe_locs.shape[0], self.L, self.K])
             else:
                 self.w = nn.Parameter(self.initializations['w'].sample([self.L, self.num_local_clusters, self.K]),
                                       requires_grad=True)
         else:
-            self.mu_bug = nn.Parameter(self.initializations['mu_bug'].sample([self.L, self.num_local_clusters]).squeeze(),
-                                            requires_grad = True)
-            r_temp = self.initializations['r_bug'].sample([self.L, self.num_local_clusters]).squeeze()
-            self.r_bug = nn.Parameter(torch.log(1 / r_temp), requires_grad=True)
+            ix = np.concatenate([np.random.choice(range(len(self.initializations['mu_bug'])), self.L, replace = False) for
+                  ii in range(self.num_local_clusters)])
+            self.mu_bug = nn.Parameter(torch.Tensor(self.microbe_locs[ix,:]).view(self.L, self.num_local_clusters, -1).squeeze())
+            r_temp = self.r_scale_bug*torch.ones((self.L, self.num_local_clusters)).squeeze()
+            self.r_bug = nn.Parameter(1 / torch.log(r_temp), requires_grad=True)
             if self.num_local_clusters<=1:
                 self.w = self.initializations['w'].sample([self.microbe_locs.shape[0], self.L])
             else:
@@ -136,10 +137,10 @@ class Model(nn.Module):
 
         self.w_act = torch.sigmoid(self.w / self.temp_grouper)
 
-        self.mu_met = nn.Parameter(self.initializations['mu_met'].sample(sample_shape = torch.Size([self.K])),
-                                        requires_grad = True)
-        r_temp = self.initializations['r_met'].sample([self.K])
-        self.r_met = nn.Parameter(torch.log(1/r_temp), requires_grad = True)
+        ix = np.random.choice(range(len(self.initializations['mu_met'])), self.K, replace = False)
+        self.mu_met = nn.Parameter(torch.Tensor(self.met_locs[ix,:]), requires_grad = True)
+        r_temp = self.r_scale_met*torch.ones((self.K)).squeeze()
+        self.r_met = nn.Parameter(1/torch.log(r_temp), requires_grad = True)
 
         self.pi_met = nn.Parameter(self.initializations['pi_met'].sample(), requires_grad=True).unsqueeze(0)
 
@@ -205,9 +206,9 @@ if __name__ == "__main__":
     n_nuisance = 0
     meas_var = 0.001
     prior_meas_var = 4.0
-    case = '12-30-21-noRepeats'
+    case = '1-3-21'
     if args.rep_clust:
-        case = '12-30-21-wRepeats'
+        case = case + '_repclust' + str(args.rep_clust)
     iterations = 30001
     seed = 0
     load = 0
@@ -347,8 +348,11 @@ if __name__ == "__main__":
             net.load_state_dict(checkpoint['model_state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             start = checkpoint['epoch'] - 1
-            tau_logspace = np.concatenate((tau_logspace,np.logspace(-2, -5, int(iterations / 100))))
-            net.temp_grouper, net.temp_selector = 10**-2, 10**-2
+            # tau_logspace = np.concatenate((tau_logspace,np.logspace(-2, -5, int(iterations / 100))))
+            ix = int((checkpoint['epoch'] - 400) / 100)
+            if ix >= len(tau_logspace):
+                ix = -1
+            net.temp_grouper, net.temp_selector = tau_logspace[ix], tau_logspace[ix]
             iterations = start + iterations
             print('model loaded')
         else:

@@ -64,12 +64,13 @@ N_bug = 20
 learn = 'all'
 pid_list = []
 prior_meas_var = 4
+meas_var = 0.001
 for seed in [0,1]:
-    for meas_var in [0.01, 1]:
-        for L, K in [(2,2),(3,3),(6,6)]:
-            for repeat_clusters in [0, 1]:
-                for priors in ['all','none']:
-                    f = open('m2m.lsf', 'w')
-                    f.write(my_str.format(learn, priors, N_met, N_bug, L, K, meas_var, prior_meas_var, seed, repeat_clusters))
-                    f.close()
-                    os.system('bsub < {}'.format('m2m.lsf'))
+    # for meas_var in [0.01, 1]:
+    for L, K in [(2,2),(3,3),(6,6)]:
+        for repeat_clusters in [0, 1]:
+            for priors in ['all','none']:
+                f = open('m2m.lsf', 'w')
+                f.write(my_str.format(learn, priors, N_met, N_bug, L, K, meas_var, prior_meas_var, seed, repeat_clusters))
+                f.close()
+                os.system('bsub < {}'.format('m2m.lsf'))

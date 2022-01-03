@@ -1,6 +1,6 @@
 import subprocess
 from main_MAPv0 import *
-max_load = 10
+max_load = 5
 
 my_str = "python3 ./main_MAP.py -learn {0} -priors {1} -N_met {2} -N_bug {3} -n_local_clusters {4} -L {5} -K {6} -meas_var {7} -prior_meas_var {8} -seed {9}"
 
@@ -10,6 +10,7 @@ learn = 'all'
 pid_list = []
 prior_meas_var = 4
 meas_var = 0.001
+local = 1
 for seed in [0,1]:
     for L, K in [(2,2),(3,3),(4,4)]:
         # for local in [1, 5]:
