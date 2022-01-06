@@ -1,6 +1,7 @@
 import subprocess
 from main_MAPv0 import *
 my_str = '''
+#module load Anaconda3/5.2.0 
 #!/bin/bash
 #BSUB -J m2m
 #BSUB -o m2m_L{6}_K{7}_mvar{8}.out
@@ -56,7 +57,7 @@ echo $TMPDIR
 cd /PHShome/jjd65/m2m_map
 rm *.err
 rm *.out
-python3 ./main_MAP.py -learn {0} -priors {1} -N_met {2} -N_bug {3} -L {4} -K {5} -meas_var {6} -seed {8} -rep_clust {9}
+python3 ./main_MAP.py -learn {0} -priors {1} -N_met {2} -N_bug {3} -L {4} -K {5} -meas_var {6} -seed {7} -rep_clust {7}
 '''
 
 N_met = 20
