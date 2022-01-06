@@ -1,7 +1,6 @@
 import subprocess
 from main_MAPv0 import *
 my_str = '''
-#module load Anaconda3/5.2.0 
 #!/bin/bash
 #BSUB -J m2m
 #BSUB -o m2m_L{6}_K{7}_mvar{8}.out
@@ -54,6 +53,8 @@ echo $TMPDIR
 
 # Add your job command here
 
+module load Anaconda3/5.2.0
+source activate dispatcher
 cd /PHShome/jjd65/m2m_map
 rm *.err
 rm *.out
