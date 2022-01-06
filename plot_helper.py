@@ -226,7 +226,7 @@ def plot_output_locations(path, net, best_mod, param_dict, fold, type = 'best'):
             fig, ax = plt.subplots(net.K, best_w.shape[1], figsize=(5 * best_w.shape[1], 5* net.K))
             for k in range(net.K):
                 for i in range(best_w.shape[0]):
-                    ax[k,i].scatter(net.microbe_locs[:, 0], net.microbe_locs[:, 1], facecolors='none', edgecolors='r')
+                    ax[k,i].scatter(net.microbe_locs[:, 0], net.microbe_locs[:, 1], facecolors='r', edgecolors='r')
                     for ii in range(net.microbe_locs.shape[0]):
                         ax[k,i].text(net.microbe_locs[ii, 0], net.microbe_locs[ii, 1],
                                    str(ii))

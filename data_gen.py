@@ -5,7 +5,7 @@ from plot_helper import *
 
 def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clusters = 2, N_bug_clusters = 2, N_local_clusters=4, state = 1,
                             beta_var = 2, cluster_disparity = 100, meas_var = 0.001,
-                            cluster_per_met_cluster = 1, repeat_clusters = True):
+                            cluster_per_met_cluster = 1, repeat_clusters = True, cluster_noise = 0.01):
     np.random.seed(state)
     choose_from = np.arange(N_met)
     met_gp_ids = []
@@ -103,34 +103,28 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
 
     betas = np.random.normal(0, np.sqrt(beta_var), size = (N_bug_clusters+1, N_met_clusters))
     alphas = st.bernoulli(0.5).rvs((N_bug_clusters, N_met_clusters))
-    cluster_means = np.random.choice(
-        np.arange(1, np.int(N_bug_clusters * cluster_disparity * 2) + 1, cluster_disparity), N_bug_clusters,
-        replace=False)
+    cluster_starts = np.arange(1, np.int(N_bug_clusters * cluster_disparity) + 1, cluster_disparity)
+    cluster_ends = cluster_starts[1:] - cluster_disparity/10
+    cluster_ends = np.append(cluster_ends, cluster_starts[-1] + cluster_disparity - cluster_disparity/10)
     if N_bug_clusters==2 and N_met_clusters==2:
         betas = np.array([[-1,7],[-2.2,0.5],[0,3]])
         alphas = np.array([[1, 1], [0, 1]])
-        cluster_means = [10,110]
+        cluster_starts = [10,110]
+        cluster_ends = [100, 200]
     X = np.zeros((N_samples, N_bug))
 
-    cluster_means = cluster_means / (np.max(cluster_means) + 10)
     if len(w_gen.shape)>2:
         temp2 = w_gen[:,:,0]
     else:
         temp2 = w_gen
     for i in range(N_bug_clusters):
         outer_ixs = np.where(temp2[:,i]==1)[0]
-        mu = cluster_means[i]
-        v = (mu * (1 - mu)) / meas_var
         if N_local_clusters <= 1:
-            X[:, outer_ixs] = st.beta(mu * v, (1 - mu) * v).rvs(size=(N_samples, len(outer_ixs)))
+            X[:, outer_ixs] = st.uniform(cluster_starts[i], cluster_ends[i]-cluster_starts[i]).rvs(size=(N_samples, len(outer_ixs)))
         else:
             for dix in outer_ixs:
                 ixs = np.where(temp[:, dix]==1)[0]
-                mu = cluster_means[i]
-                v = (mu * (1 - mu)) / meas_var
-                X[:, ixs] = st.beta(mu * v, (1 - mu) * v).rvs(size=(N_samples, len(ixs)))
-        # X[:, ixs] = st.nbinom(cluster_means[i], 0.5).rvs(size = (N_samples, len(ixs)))
-    X = X/np.expand_dims(np.sum(X, 1),1)
+                X[:, ixs] = st.uniform(cluster_starts[i], cluster_ends[i]-cluster_starts[i]).rvs(size=(N_samples, len(ixs)))
 
     b = X@temp
     if N_local_clusters > 1:
@@ -142,12 +136,14 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
         vals = np.zeros((N_samples, N_met))
         ix = np.where(z_gen[:,k]==1)[0]
         cluster_vals = betas[0,k] + b@(betas[1:,k]*alphas[:,k])
-        vals[:, ix] = np.random.normal(cluster_vals/len(ix), 0.1, size = (len(ix), N_samples)).T
+        vals[:, ix] = np.random.normal(cluster_vals/len(ix), cluster_noise, size = (len(ix), N_samples)).T
         which_sum = np.random.choice(ix,1)[0]
         vals[:, which_sum] = 0
         total_sum = np.sum(vals,1)
         vals[:, which_sum] = cluster_vals - total_sum
         y[:, ix] = vals[:, ix]
+
+    y = y + np.random.normal(0,meas_var, size = y.shape)
 
     return X, y, betas, alphas, w_gen, z_gen, bug_locs, met_locs, mu_bug, mu_met, r_bug, r_met, temp
 
@@ -155,8 +151,8 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
 if __name__ == "__main__":
     N_bug = 10
     N_met = 10
-    K=2
-    L=2
+    K=3
+    L=3
     n_local_clusters = 1
     cluster_per_met_cluster = 0
     meas_var = 0.001
@@ -168,8 +164,11 @@ if __name__ == "__main__":
         N_met = N_met, N_bug = N_bug, N_met_clusters = K, N_local_clusters = n_local_clusters, N_bug_clusters = L,
         meas_var = meas_var, cluster_per_met_cluster= cluster_per_met_cluster, repeat_clusters=repeat_clusters)
 
-    # r_scale_met =
-    bug_clusters = np.argmax(gen_w,1)
+    range_x = np.max(gen_met_locs[:, 0]) - np.min(gen_met_locs[:, 0])
+    range_y = np.max(gen_met_locs[:, 1]) - np.min(gen_met_locs[:, 1])
+    r_scale_met = np.sqrt(range_x ** 2 + range_y ** 2) / (K * 2)
+
+    bug_clusters = np.argmax(gen_w, 1)
     met_clusters = np.argmax(gen_z, 1)
 
     div = y[:, met_clusters==1]/y[:, met_clusters==0]

@@ -12,6 +12,7 @@ from torch.distributions.categorical import Categorical
 from torch.distributions.bernoulli import Bernoulli
 from torch.distributions.normal import Normal
 from torch.distributions.negative_binomial import NegativeBinomial
+from torch.distributions.binomial import Binomial
 import torch.nn as nn
 import time
 import numpy as np
@@ -141,4 +142,12 @@ class MAPloss():
         #              (1 + net.r_scale_met/2)*torch.log(net.r_met)).sum()
     def pi_met_loss(self):
         self.loss_dict['pi_met'] = (torch.Tensor(1 - np.array(self.net.params['pi_met']['epsilon'])) * torch.log(torch.softmax(self.net.pi_met,1))).sum()
+
+    # def rad_mu_loss(self):
+    #     kappa = torch.stack([torch.sqrt(((self.net.mu_bug - torch.tensor(
+    #         self.net.microbe_locs[m,:])).pow(2)).sum(-1)) for m in range(self.net.microbe_locs.shape[0])])
+    #     num_gzero = [len(torch.where((torch.exp(self.net.r_bug[l]) - kappa[:,l])>0)[0]) for l in range(len(self.net.r_bug))]
+    #     binom = Binomial(self.net.microbe_locs.shape[0], (1/len(self.net.r_bug)))
+    #     log_prob = binom.log_prob(torch.Tensor(np.array(num_gzero))).sum()
+    #     self.loss_dict['rad_mu'] = log_prob
 

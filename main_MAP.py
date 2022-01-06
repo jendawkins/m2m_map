@@ -20,7 +20,7 @@ from concrete import *
 import argparse
 import re
 from data_gen import *
-
+import copy
 
 class Model(nn.Module):
     def __init__(self, met_locs, microbe_locs, temp_grouper = 1, temp_selector = 1, num_local_clusters = 6, K = 2, beta_var = 16.,
@@ -32,8 +32,8 @@ class Model(nn.Module):
         self.K = K
         self.L = L
         self.beta_var = beta_var
-        self.mu_var_met = (2/met_locs.shape[1])*np.sum(np.var(met_locs.T))
-        self.mu_var_bug = (2/microbe_locs.shape[1])*np.sum(np.var(microbe_locs.T))
+        self.mu_var_met = (4/met_locs.shape[1])*np.sum(np.var(met_locs, 0))
+        self.mu_var_bug = (4/microbe_locs.shape[1])*np.sum(np.var(microbe_locs, 0))
         self.meas_var = meas_var
         self.compute_loss_for = compute_loss_for
         self.MAPloss = MAPloss(self)
@@ -46,13 +46,11 @@ class Model(nn.Module):
         self.alpha_loc = 1.
         self.tau_transformer = tau_transformer
 
-        range_x = np.max(self.met_locs[:,0]) - np.min(self.met_locs[:,0])
-        range_y = np.max(self.met_locs[:,1]) - np.min(self.met_locs[:,1])
-        self.r_scale_met = np.sqrt(range_x**2 + range_y**2) / (self.K*2)
+        range = np.array([np.max(self.met_locs[:, d]) - np.min(self.met_locs[:, d]) for d in np.arange(self.met_locs.shape[1])])
+        self.r_scale_met = np.sqrt(np.sum(range**2)) / (self.K * 2)
 
-        range_x = np.max(self.microbe_locs[:,0]) - np.min(self.microbe_locs[:,0])
-        range_y = np.max(self.microbe_locs[:,1]) - np.min(self.microbe_locs[:,1])
-        self.r_scale_bug = np.sqrt(range_x**2 + range_y**2) / (self.L*2)
+        range = np.array([np.max(self.microbe_locs[:, d]) - np.min(self.microbe_locs[:, d]) for d in np.arange(self.microbe_locs.shape[1])])
+        self.r_scale_bug = np.sqrt(np.sum(range**2)) / (self.L * 2)
 
         self.params = {}
         self.distributions = {}
@@ -60,7 +58,7 @@ class Model(nn.Module):
         self.params['alpha'] = {'loc': self.alpha_loc, 'temp':self.temp_selector}
         self.params['mu_met'] = {'mean': 0, 'var': self.mu_var_met}
         self.params['mu_bug'] = {'mean': 0, 'var': self.mu_var_bug}
-        self.params['r_bug'] = {'dof': 3, 'scale': self.r_scale_bug}
+        self.params['r_bug'] = {'dof': 2, 'scale': self.r_scale_bug}
         self.params['r_met'] = {'dof': 2, 'scale': self.r_scale_met}
         self.params['thresh'] = {'low': 10, 'high':1000}
         self.distributions['beta'] = Normal(self.params['beta']['mean'], self.params['beta']['scale'])
@@ -100,8 +98,8 @@ class Model(nn.Module):
         self.initializations['alpha'] = Normal(0,1)
         self.initializations['mu_met'] = self.met_locs
         self.initializations['mu_bug'] = self.microbe_locs
-        self.initializations['r_met'] = self.distributions['r_met']
-        self.initializations['r_bug'] = self.distributions['r_bug']
+        # self.initializations['r_met'] = self.distributions['r_met']
+        # self.initializations['r_bug'] = self.distributions['r_bug']
         # self.initializations['pi_bug'] = self.distributions['pi_bug']
         self.initializations['pi_met'] = self.distributions['pi_met']
         self.initializations['z'] = Normal(0,1)
@@ -117,7 +115,7 @@ class Model(nn.Module):
                   ii in range(self.num_local_clusters*self.K)])
             self.mu_bug = nn.Parameter(torch.Tensor(self.microbe_locs[ix,:]).view(self.L, self.num_local_clusters, self.K, -1).squeeze())
             r_temp = self.r_scale_bug*torch.ones((self.L, self.num_local_clusters, self.K)).squeeze()
-            self.r_bug = nn.Parameter(1 / torch.log(r_temp), requires_grad=True)
+            self.r_bug = nn.Parameter(torch.log(1 / r_temp), requires_grad=True)
             if self.num_local_clusters <= 1:
                 self.w = self.initializations['w'].sample([self.microbe_locs.shape[0], self.L, self.K])
             else:
@@ -128,7 +126,7 @@ class Model(nn.Module):
                   ii in range(self.num_local_clusters)])
             self.mu_bug = nn.Parameter(torch.Tensor(self.microbe_locs[ix,:]).view(self.L, self.num_local_clusters, -1).squeeze())
             r_temp = self.r_scale_bug*torch.ones((self.L, self.num_local_clusters)).squeeze()
-            self.r_bug = nn.Parameter(1 / torch.log(r_temp), requires_grad=True)
+            self.r_bug = nn.Parameter(torch.log(r_temp), requires_grad=True)
             if self.num_local_clusters<=1:
                 self.w = self.initializations['w'].sample([self.microbe_locs.shape[0], self.L])
             else:
@@ -140,9 +138,9 @@ class Model(nn.Module):
         ix = np.random.choice(range(len(self.initializations['mu_met'])), self.K, replace = False)
         self.mu_met = nn.Parameter(torch.Tensor(self.met_locs[ix,:]), requires_grad = True)
         r_temp = self.r_scale_met*torch.ones((self.K)).squeeze()
-        self.r_met = nn.Parameter(1/torch.log(r_temp), requires_grad = True)
+        self.r_met = nn.Parameter(torch.log(r_temp), requires_grad = True)
 
-        self.pi_met = nn.Parameter(self.initializations['pi_met'].sample(), requires_grad=True).unsqueeze(0)
+        self.pi_met = nn.Parameter(self.initializations['pi_met'].sample().unsqueeze(0), requires_grad=True)
 
         self.z = nn.Parameter(self.initializations['z'].sample([self.met_locs.shape[0], self.K]), requires_grad=True)
         self.z_act = torch.softmax(self.z/self.temp_grouper, 1)
@@ -205,11 +203,11 @@ if __name__ == "__main__":
     priors2set = ['all']
     n_nuisance = 0
     meas_var = 0.001
-    prior_meas_var = 4.0
-    case = '1-3-21'
+    prior_meas_var = 100000
+    case = '1-6-22'
     if args.rep_clust:
         case = case + '_repclust' + str(args.rep_clust)
-    iterations = 30001
+    iterations = 20001
     seed = 0
     load = 0
     cluster_per_met_cluster = 0
@@ -298,9 +296,9 @@ if __name__ == "__main__":
                 cluster_per_met_cluster=cluster_per_met_cluster)
     net.to(device)
 
-    net_ = Model(gen_met_locs, gen_bug_locs, K = gen_z.shape[1], L= L, num_local_clusters=n_local_clusters,
-                 tau_transformer=temp_transformer,
-                 meas_var = prior_meas_var, compute_loss_for=priors2set, cluster_per_met_cluster = cluster_per_met_cluster)
+    # net_ = Model(gen_met_locs, gen_bug_locs, K = gen_z.shape[1], L= L, num_local_clusters=n_local_clusters,
+    #              tau_transformer=temp_transformer,
+    #              meas_var = prior_meas_var, compute_loss_for=priors2set, cluster_per_met_cluster = cluster_per_met_cluster)
 
     for param, dist in net.distributions.items():
         parameter_dict = net.params[param]
@@ -312,11 +310,11 @@ if __name__ == "__main__":
     param_dict = {}
     tau_logspace = np.logspace(-0.5, -6, int(iterations/100))
     net.temp_grouper, net.temp_selector = tau_logspace[0],tau_logspace[0]
-    net_.temp_grouper, net_.temp_selector = tau_logspace[0], tau_logspace[0]
+    # net_.temp_grouper, net_.temp_selector = tau_logspace[0], tau_logspace[0]
     param_dict[seed] = {}
 
     net.initialize(seed)
-    net_.initialize(seed)
+    # net_.initialize(seed)
 
     start = 0
     for name, parameter in net.named_parameters():
@@ -361,27 +359,28 @@ if __name__ == "__main__":
         print('no model loaded')
 
     x = torch.Tensor(x).to(device)
-    for name, parameter in net_.named_parameters():
-        if 'r' in name:
-            setattr(net_, name, nn.Parameter(torch.log(torch.Tensor(true_vals[name])), requires_grad=False))
-        elif 'pi' in name:
-            val = torch.Tensor(true_vals[name])
-            val = torch.log(val) + torch.log(torch.exp(val).sum())
-            setattr(net_, name, nn.Parameter(val, requires_grad=False))
-        else:
-            setattr(net_, name, nn.Parameter(torch.Tensor(true_vals[name]), requires_grad=False))
-    net_.z_act, net_.w_act = torch.softmax(net_.z / 0.1, 1), torch.softmax(net_.w / 0.1, 1)
-    net_.alpha[net_.alpha == 0] = -1
-    net_.alpha_act = torch.sigmoid(net_.alpha / 0.1)
-    # lowest_loss = criterion_.compute_loss(torch.Tensor(targets), torch.Tensor(targets))
-    _, lowest_loss = net_(x, torch.Tensor(y))
-    print('Lowest Loss:' + str(lowest_loss.item()))
+    # for name, parameter in net_.named_parameters():
+    #     if 'r' in name:
+    #         setattr(net_, name, nn.Parameter(torch.log(torch.Tensor(true_vals[name])), requires_grad=False))
+    #     elif 'pi' in name:
+    #         val = torch.Tensor(true_vals[name])
+    #         val = torch.log(val) + torch.log(torch.exp(val).sum())
+    #         setattr(net_, name, nn.Parameter(val, requires_grad=False))
+    #     else:
+    #         setattr(net_, name, nn.Parameter(torch.Tensor(true_vals[name]), requires_grad=False))
+    # net_.z_act, net_.w_act = torch.softmax(net_.z / 0.1, 1), torch.softmax(net_.w / 0.1, 1)
+    # net_.alpha[net_.alpha == 0] = -1
+    # net_.alpha_act = torch.sigmoid(net_.alpha / 0.1)
+    # # lowest_loss = criterion_.compute_loss(torch.Tensor(targets), torch.Tensor(targets))
+    # _, lowest_loss = net_(x, torch.Tensor(y))
+    # print('Lowest Loss:' + str(lowest_loss.item()))
     cluster_targets = np.stack([y[:,np.where(gen_z[:,i]==1)[0][0]] for i in np.arange(gen_z.shape[1])]).T
     timer = []
     end_learning = False
     tau_vec = []
     alpha_tau_vec = []
     lowest_loss_vec = []
+    loss_dict_vec = []
     ix = 0
     for epoch in range(start, iterations):
         if epoch == iterations:
@@ -392,10 +391,10 @@ if __name__ == "__main__":
                 if ix >= len(tau_logspace):
                     ix = -1
                 net.temp_grouper, net.temp_selector = tau_logspace[ix],tau_logspace[ix]
-                net_.temp_grouper, net_.temp_selector = tau_logspace[ix], tau_logspace[ix]
-                _, lowest_loss = net_(x, torch.Tensor(y))
-                print('Lowest Loss:' + str(lowest_loss.item()))
-                print('tau:' + str(net.temp_grouper))
+                # net_.temp_grouper, net_.temp_selector = tau_logspace[ix], tau_logspace[ix]
+                # _, lowest_loss = net_(x, torch.Tensor(y))
+                # print('Lowest Loss:' + str(lowest_loss.item()))
+                # print('tau:' + str(net.temp_grouper))
             # net.temp_grouper, net.temp_selector = 1/(epoch+1), 1/(epoch+1)
             # net_.temp_grouper, net_.temp_selector = 1 / (epoch + 1), 1 / (epoch + 1)
             tau_vec.append(net.temp_grouper)
@@ -404,6 +403,7 @@ if __name__ == "__main__":
 
         train_out_vec.append(cluster_outputs)
         loss_vec.append(loss.item())
+        loss_dict_vec.append(copy.copy(net.MAPloss.loss_dict))
         loss.backward()
         optimizer.step()
 
@@ -425,6 +425,20 @@ if __name__ == "__main__":
                 fig3, ax3 = plot_loss(fig3, ax3, seed, epoch+1 - start, loss_vec, lowest_loss=None)
                 fig3.tight_layout()
                 fig3.savefig(path_orig + 'loss_seed_' + str(seed) + '.pdf')
+                plt.close(fig3)
+
+                fig3, ax3 = plt.subplots(len(net.MAPloss.loss_dict.keys()
+                                             ), 1, figsize = (8, 8*len(net.MAPloss.loss_dict.keys())))
+                it = 0
+                for key, loss_val in net.MAPloss.loss_dict.items():
+                    vals = [ldv[key].item() for ldv in loss_dict_vec]
+                    ax3[it].plot(range(start, epoch+1), vals)
+                    ax3[it].set_title(key)
+                    ax3[it].set_xlabel('Epochs')
+                    ax3[it].set_ylabel('Loss')
+                    it += 1
+                fig3.tight_layout()
+                fig3.savefig(path_orig + 'lossdict_seed_' + str(seed) + '.pdf')
                 plt.close(fig3)
 
 
