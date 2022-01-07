@@ -156,7 +156,9 @@ if __name__ == "__main__":
     n_local_clusters = 1
     cluster_per_met_cluster = 0
     meas_var = 0.001
-    path = 'test/'
+    path = 'debug/'
+    if not os.path.isdir(path):
+        os.mkdir(path)
     repeat_clusters = 0
 
     x, y, gen_beta, gen_alpha, gen_w, gen_z, gen_bug_locs, gen_met_locs, mu_bug, \

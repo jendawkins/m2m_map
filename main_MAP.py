@@ -47,10 +47,10 @@ class Model(nn.Module):
         self.tau_transformer = tau_transformer
 
         range = np.array([np.max(self.met_locs[:, d]) - np.min(self.met_locs[:, d]) for d in np.arange(self.met_locs.shape[1])])
-        self.r_scale_met = np.sqrt(np.sum(range**2)) / (self.K * 2)
+        self.r_scale_met = 1.5*np.sqrt(np.sum(range**2)) / (self.K * 2)
 
         range = np.array([np.max(self.microbe_locs[:, d]) - np.min(self.microbe_locs[:, d]) for d in np.arange(self.microbe_locs.shape[1])])
-        self.r_scale_bug = np.sqrt(np.sum(range**2)) / (self.L * 2)
+        self.r_scale_bug = 1.5*np.sqrt(np.sum(range**2)) / (self.L * 2)
 
         self.params = {}
         self.distributions = {}
@@ -204,14 +204,16 @@ if __name__ == "__main__":
     n_nuisance = 0
     meas_var = 0.001
     prior_meas_var = 100000
-    case = '1-6-22'
+    case = '1-7-22_N1000'
     if args.rep_clust:
         case = case + '_repclust' + str(args.rep_clust)
     iterations = 20001
     seed = 0
-    load = 0
+    load = 1
     cluster_per_met_cluster = 0
     repeat_clusters = 0
+    lr = 0.001
+    N_samples = 1000
 
     if args.K is not None:
         K = args.K
@@ -250,7 +252,6 @@ if __name__ == "__main__":
 
     # n_splits = 2
     use_MAP = True
-    lr = 0.001
     temp_grouper, temp_selector = 'scheduled', 'scheduled'
     temp_transformer = 0.1
     # info = 'meas_var' + str(meas_var).replace('.', 'd') + '-prior_mvar' + str(prior_meas_var).replace('.', 'd') + \
@@ -282,7 +283,7 @@ if __name__ == "__main__":
     mu_met, r_bug, r_met, gen_u = generate_synthetic_data(
         N_met = N_met, N_bug = N_bug, N_met_clusters = K, N_local_clusters = n_local_clusters,
         N_bug_clusters = L,meas_var = meas_var, cluster_per_met_cluster= cluster_per_met_cluster,
-        repeat_clusters= repeat_clusters)
+        repeat_clusters= repeat_clusters, N_samples=N_samples)
 
     true_vals = {'y':y, 'beta':gen_beta, 'alpha':gen_alpha, 'mu_bug': mu_bug,
                  'mu_met': mu_met, 'u': gen_u,

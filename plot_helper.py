@@ -20,6 +20,7 @@ def plot_syn_data(path, x, y, gen_z, gen_bug_locs, gen_met_locs,
                   mu_bug, r_bug, mu_met, r_met, gen_u):
     fig, ax = plt.subplots(1, 2, figsize = (10,5))
     fig2, ax2 = plt.subplots(2, 1)
+    fig3, ax3 = plt.subplots(2,1)
     p1 = ax[0].scatter(gen_bug_locs[:, 0], gen_bug_locs[:, 1], color = 'k')
     for i in range(gen_bug_locs.shape[0]):
         ax[0].text(gen_bug_locs[i, 0], gen_bug_locs[i, 1], str(i))
@@ -42,10 +43,20 @@ def plot_syn_data(path, x, y, gen_z, gen_bug_locs, gen_met_locs,
         # for dix in dixs:
         ix = np.where(gen_u[:, i]==1)[0]
         ax2[0].hist(x[:, ix].flatten(), range=(x.min(), x.max()), label='Cluster ' + str(i), alpha=0.5, bins = bins)
-        ax2[0].set_xlabel('Microbial relative abundances')
-        ax2[0].set_ylabel('# Microbes in Cluster x\n# Samples Per Microbe', fontsize = 10)
-        ax2[0].set_title('Microbes')
-        ax[0].set_aspect('equal')
+    ax2[0].set_xlabel('Microbial relative abundances')
+    ax2[0].set_ylabel('# Microbes in Cluster x\n# Samples Per Microbe', fontsize = 10)
+    ax2[0].set_title('Microbes')
+    ax[0].set_aspect('equal')
+
+    b = x@gen_u
+    bins = int((b.max() - b.min()) / 5)
+    if bins <= 10:
+        bins = 10
+    for k in range(b.shape[1]):
+        ax3[0].hist(b[:,k].flatten(), range = (b.min(), b.max()), label = 'Cluster ' + str(k), alpha = 0.5, bins = bins)
+    ax3[0].set_title('Histogram of microbe cluster sums')
+    ax3[0].legend()
+    # ax3[0].set_aspect('equal')
 
     ax[0].legend()
     ax2[0].legend()
@@ -66,10 +77,21 @@ def plot_syn_data(path, x, y, gen_z, gen_bug_locs, gen_met_locs,
             bins = 10
         ax2[1].hist(y[:, ix].flatten(), range=(y.min(), y.max()),
                     label='Cluster ' + str(i), alpha=0.5, bins = bins)
-        ax2[1].set_xlabel('Standardized metabolite levels')
-        ax2[1].set_ylabel('# Metabolites in Cluster x\n# Samples Per Metabolite', fontsize = 10)
-        ax2[1].set_title('Metabolites')
-        ax[1].set_aspect('equal')
+    ax2[1].set_xlabel('Standardized metabolite levels')
+    ax2[1].set_ylabel('# Metabolites in Cluster x\n# Samples Per Metabolite', fontsize = 10)
+    ax2[1].set_title('Metabolites')
+
+    g = y@gen_z
+    bins = int((g.max() - g.min()) / 5)
+    if bins <= 10:
+        bins = 10
+    for k in range(g.shape[1]):
+        ax3[1].hist(g[:,k].flatten(), range = (g.min(), g.max()), label = 'Cluster ' + str(k), alpha = 0.5, bins = bins)
+    ax3[1].set_title('Histogram of metabolite cluster sums')
+    ax3[1].legend()
+    # ax3[1].set_aspect('equal')
+
+    ax[1].set_aspect('equal')
     ax[1].legend()
     ax2[1].legend()
     fig.tight_layout()
@@ -78,6 +100,8 @@ def plot_syn_data(path, x, y, gen_z, gen_bug_locs, gen_met_locs,
     fig2.savefig(path + 'cluster_histogram.pdf')
     plt.close(fig)
     plt.close(fig2)
+    fig3.savefig(path + 'cluster_sum_hist.pdf')
+    plt.close(fig3)
 
 def plot_distribution(dist, param, true_val = None, ptype = 'init', path = '', **kwargs):
     if ptype == 'init':

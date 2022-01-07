@@ -188,6 +188,18 @@ def filter_vars(data, perc=5, weeks = [0,1,2]):
     #     import pdb; pdb.set_trace()
     return data.iloc[:,list(rm2)]
 
+def standardize(x,override = True):
+    if not override:
+        assert(x.shape[0]<x.shape[1])
+
+    dem = np.std(x,0)
+    if (dem == 0).any():
+        dem = np.where(np.std(x, 0) == 0, 1, np.std(x, 0))
+    stand = (x - np.mean(x, 0))/dem
+    ix = np.where((stand == 1).all())[0]
+    stand.iloc[:, ix] = 0
+    return stand
+
 
 def filter_by_pt(dataset, targets=None, perc = .15, pt_thresh = 1, meas_thresh = 10, weeks = [0,1,2]):
     # tmpts = [float(x.split('-')[1]) for x in dataset.index.values if x.replace('.','').isnumeric()]

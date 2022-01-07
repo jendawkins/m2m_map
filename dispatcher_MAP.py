@@ -59,18 +59,19 @@ rm *.out
 python3 ./main_MAP.py -learn {0} -priors {1} -N_met {2} -N_bug {3} -L {4} -K {5} -meas_var {6} -seed {7} -rep_clust {8}
 '''
 
-N_met = 20
-N_bug = 20
+N_met = 25
+N_bug = 25
 learn = 'all'
 pid_list = []
 meas_var = 0.001
-for repeat_clusters in [0,1]:
-    for seed in [0,1,2,3,4,5]:
-        # for meas_var in [0.01, 1]:
-        for L, K in [(2,2),(3,3),(6,6)]:
-            # for repeat_clusters in [0, 1]:
-            for priors in ['all','none']:
-                f = open('m2m.lsf', 'w')
-                f.write(my_str.format(learn, priors, N_met, N_bug, L, K, meas_var, seed, repeat_clusters))
-                f.close()
-                os.system('bsub < {}'.format('m2m.lsf'))
+repeat_clusters = 0
+priors = 'all'
+for seed in range(10):
+    # for meas_var in [0.01, 1]:
+    for L, K in [(2,2),(3,3),(6,6)]:
+        # for repeat_clusters in [0, 1]:
+        for N_met, N_bug in [(10,10),(20,20),(30,30)]:
+            f = open('m2m.lsf', 'w')
+            f.write(my_str.format(learn, priors, N_met, N_bug, L, K, meas_var, seed, repeat_clusters))
+            f.close()
+            os.system('bsub < {}'.format('m2m.lsf'))
