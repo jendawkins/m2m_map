@@ -203,11 +203,11 @@ if __name__ == "__main__":
     priors2set = ['all']
     n_nuisance = 0
     meas_var = 0.001
-    prior_meas_var = 100000
+    prior_meas_var = 500000
     case = '1-7-22_N1000'
     if args.rep_clust:
         case = case + '_repclust' + str(args.rep_clust)
-    iterations = 20001
+    iterations = 30001
     seed = 0
     load = 1
     cluster_per_met_cluster = 0
