@@ -198,13 +198,13 @@ if __name__ == "__main__":
     K=2
     n_local_clusters = 1
     L = 2
-    N_met, N_bug = 10,10
+    N_met, N_bug = 20,20
     params2learn = ['all']
     priors2set = ['all']
     n_nuisance = 0
     meas_var = 0.001
     prior_meas_var = 500000
-    case = '1-7-22_N1000'
+    case = '1-10-22'
     if args.rep_clust:
         case = case + '_repclust' + str(args.rep_clust)
     iterations = 30001
@@ -309,7 +309,7 @@ if __name__ == "__main__":
     fig_dict4, ax_dict4 = {},{}
     fig_dict5, ax_dict5 = {},{}
     param_dict = {}
-    tau_logspace = np.logspace(-0.5, -6, int(iterations/100))
+    tau_logspace = np.logspace(-0.5, -6, int(60000/10))
     net.temp_grouper, net.temp_selector = tau_logspace[0],tau_logspace[0]
     # net_.temp_grouper, net_.temp_selector = tau_logspace[0], tau_logspace[0]
     param_dict[seed] = {}
@@ -348,7 +348,7 @@ if __name__ == "__main__":
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             start = checkpoint['epoch'] - 1
             # tau_logspace = np.concatenate((tau_logspace,np.logspace(-2, -5, int(iterations / 100))))
-            ix = int((checkpoint['epoch'] - 400) / 100)
+            ix = int((checkpoint['epoch'] - 100) / 10)
             if ix >= len(tau_logspace):
                 ix = -1
             net.temp_grouper, net.temp_selector = tau_logspace[ix], tau_logspace[ix]
@@ -387,8 +387,8 @@ if __name__ == "__main__":
         if epoch == iterations:
             end_learning = True
         if isinstance(temp_grouper, str) and isinstance(temp_selector, str):
-            if epoch%100==0 and epoch>400:
-                ix = int((epoch-400)/100)
+            if epoch%10==0 and epoch>100:
+                ix = int((epoch-100)/10)
                 if ix >= len(tau_logspace):
                     ix = -1
                 net.temp_grouper, net.temp_selector = tau_logspace[ix],tau_logspace[ix]
