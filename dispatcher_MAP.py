@@ -63,8 +63,6 @@ parser.add_argument("-case", "--case", help="case", type=str)
 parser.add_argument("-iter", "--iter", help="iter", type=int)
 args = parser.parse_args()
 
-my_str = my_str + '-' + args.a1[0]
-
 N_met = 25
 N_bug = 25
 learn = 'all'
