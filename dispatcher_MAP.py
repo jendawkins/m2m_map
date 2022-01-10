@@ -3,8 +3,8 @@ from main_MAPv0 import *
 my_str = '''
 #!/bin/bash
 #BSUB -J m2m
-#BSUB -o m2m_L{6}_K{7}_mvar{8}.out
-#BSUB -e m2m_L{6}_K{7}_mvar{8}.err
+#BSUB -o m2m_L{4}_K{5}.out
+#BSUB -e m2m_L{4}_K{5}.err
 
 # This is a sample script with specific resource requirements for the
 # **bigmemory** queue with 64GB memory requirement and memory
@@ -54,10 +54,15 @@ echo $TMPDIR
 # Add your job command here
 
 cd /PHShome/jjd65/m2m_map
-rm *.err
-rm *.out
 python3 ./main_MAP.py -learn {0} -priors {1} -N_met {2} -N_bug {3} -L {4} -K {5} -meas_var {6} -seed {7} -rep_clust {8}
 '''
+
+# parser = argparse.ArgumentParser()
+# parser.add_argument("-aint", "--aint", help="argument 1", type=str, nargs='+')
+# parser.add_argument("-astr", "--astr", help="argument 2", type=str, nargs='+')
+# args = parser.parse_args()
+#
+# my_str = my_str + '-' + args.a1[0]
 
 N_met = 25
 N_bug = 25

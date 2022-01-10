@@ -149,17 +149,17 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
 
 
 if __name__ == "__main__":
-    N_bug = 10
-    N_met = 10
-    K=3
-    L=3
+    N_bug = 5
+    N_met = 5
+    K=2
+    L=2
     n_local_clusters = 1
     cluster_per_met_cluster = 0
     meas_var = 0.001
     path = 'debug/'
     if not os.path.isdir(path):
         os.mkdir(path)
-    repeat_clusters = 0
+    repeat_clusters = 1
 
     x, y, gen_beta, gen_alpha, gen_w, gen_z, gen_bug_locs, gen_met_locs, mu_bug, \
     mu_met, r_bug, r_met, gen_u = generate_synthetic_data(
