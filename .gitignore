@@ -15,3 +15,5 @@ alpha_probs/
 results_MAP/.DS_Store
 *.tar
 results_MAP/
+pubchem/
+pubchem_isomeric/
