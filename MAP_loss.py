@@ -44,9 +44,9 @@ class MAPloss():
         return total_loss
 
     def alpha_loss(self):
-        self.loss_dict['alpha'] = ((self.net.temp_selector + 1) * torch.log(self.net.alpha_act) + (self.net.temp_selector + 1) * torch.log(
+        self.loss_dict['alpha'] = ((self.net.temp_scheduled + 1) * torch.log(self.net.alpha_act) + (self.net.temp_scheduled + 1) * torch.log(
             1 - self.net.alpha_act) - \
-                              2 * self.net.temp_selector * torch.log(self.net.alpha_act) - 2 * self.net.temp_selector * torch.log(
+                              2 * self.net.temp_scheduled * torch.log(self.net.alpha_act) - 2 * self.net.temp_scheduled * torch.log(
                     1 - self.net.alpha_act) + \
                               torch.log(torch.tensor(self.net.alpha_loc))).sum()
 
@@ -58,7 +58,7 @@ class MAPloss():
 
     def w_loss(self):
         # start = time.time()
-        con = BinaryConcrete(1, self.net.temp_grouper)
+        con = BinaryConcrete(1, self.net.temp_scheduled)
         # set counts to be 2*num_detectors
         nb = NegativeBinomial(self.net.mu_bug.shape[1] * 2, torch.Tensor([0.1]))
         # mvn = [MultivariateNormal(self.net.mu_bug[k,:], (torch.eye(self.net.mu_bug.shape[1]) *
@@ -81,9 +81,9 @@ class MAPloss():
             probs = torch.cat((probs, np.median(probs)*torch.ones((probs.shape[0], 1))), 1)
         probs[probs<1e-44] = 1e-44
         self.loss_dict['w'] = torch.stack([(-torch.log(torch.softmax(self.net.pi_bug,1)) +
-                                                                   (self.net.temp_grouper + 1) * torch.log(self.net.w_act[m, :]) +
+                                                                   (self.net.temp_scheduled + 1) * torch.log(self.net.w_act[m, :]) +
                                        torch.log((torch.softmax(self.net.pi_bug,1) *
-                                                  (self.net.w_act[m, :].pow(-self.net.temp_grouper))).sum())).sum() -
+                                                  (self.net.w_act[m, :].pow(-self.net.temp_scheduled))).sum())).sum() -
                                       torch.log(torch.matmul(self.net.w_act[m, :],probs[m,:]))
                                       for m in np.arange(self.net.microbe_locs.shape[0])]).sum(0)
     def mu_bug_loss(self):
@@ -105,7 +105,7 @@ class MAPloss():
         # start = time.time()
         mvn = [MultivariateNormal(self.net.mu_met[k,:], (torch.eye(self.net.mu_met.shape[1]) *
                                                                torch.exp(self.net.r_met[k])).float()) for k in np.arange(self.net.mu_met.shape[0])]
-        con = Concrete(self.net.pi_met, self.net.temp_grouper)
+        con = Concrete(self.net.pi_met, self.net.temp_scheduled)
         multi = MultDist(con, mvn)
         log_probs = torch.stack([-torch.log(multi.pdf(self.net.z_act[m,:], torch.Tensor(self.net.met_locs[m,:])))
                                  for m in np.arange(self.net.met_locs.shape[0])]).sum()
@@ -120,9 +120,9 @@ class MAPloss():
                                         k in np.arange(self.net.mu_met.shape[0])])) for m in np.arange(self.net.met_locs.shape[0])])
         probs[probs<1e-44] = 1e-44
         self.loss_dict['z'] = torch.stack([(-torch.log(torch.softmax(self.net.pi_met,1)) +
-                                                                   (self.net.temp_grouper + 1) * torch.log(self.net.z_act[m, :]) +
+                                                                   (self.net.temp_scheduled + 1) * torch.log(self.net.z_act[m, :]) +
                                        torch.log((torch.softmax(self.net.pi_met,1) *
-                                                  (self.net.z_act[m, :].pow(-self.net.temp_grouper))).sum())).sum() -
+                                                  (self.net.z_act[m, :].pow(-self.net.temp_scheduled))).sum())).sum() -
                                       torch.log(torch.matmul(self.net.z_act[m, :],probs[m,:]))
                                       for m in np.arange(self.net.met_locs.shape[0])]).sum(0)
         # print('Loss Method 1:' + str(time.time() - start))
@@ -143,11 +143,11 @@ class MAPloss():
     def pi_met_loss(self):
         self.loss_dict['pi_met'] = (torch.Tensor(1 - np.array(self.net.params['pi_met']['epsilon'])) * torch.log(torch.softmax(self.net.pi_met,1))).sum()
 
-    # def rad_mu_loss(self):
-    #     kappa = torch.stack([torch.sqrt(((self.net.mu_bug - torch.tensor(
-    #         self.net.microbe_locs[m,:])).pow(2)).sum(-1)) for m in range(self.net.microbe_locs.shape[0])])
-    #     num_gzero = [len(torch.where((torch.exp(self.net.r_bug[l]) - kappa[:,l])>0)[0]) for l in range(len(self.net.r_bug))]
-    #     binom = Binomial(self.net.microbe_locs.shape[0], (1/len(self.net.r_bug)))
-    #     log_prob = binom.log_prob(torch.Tensor(np.array(num_gzero))).sum()
-    #     self.loss_dict['rad_mu'] = log_prob
+    def rad_mu_loss(self):
+        kappa = torch.stack([torch.sqrt(((self.net.mu_bug - torch.tensor(
+            self.net.microbe_locs[m,:])).pow(2)).sum(-1)) for m in range(self.net.microbe_locs.shape[0])])
+        num_gzero = [len(torch.where((torch.exp(self.net.r_bug[l]) - kappa[:,l])>0)[0]) for l in range(len(self.net.r_bug))]
+        binom = Binomial(self.net.microbe_locs.shape[0], (1/len(self.net.r_bug)))
+        log_prob = binom.log_prob(torch.Tensor(np.array(num_gzero))).sum()
+        self.loss_dict['rad_mu'] = log_prob
 

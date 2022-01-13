@@ -5,7 +5,7 @@ from plot_helper import *
 
 def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clusters = 2, N_bug_clusters = 2, N_local_clusters=4, state = 1,
                             beta_var = 2, cluster_disparity = 100, meas_var = 0.001,
-                            cluster_per_met_cluster = 1, repeat_clusters = True, cluster_noise = 0.01):
+                            cluster_per_met_cluster = 1, repeat_clusters = True, deterministic = True):
     np.random.seed(state)
     choose_from = np.arange(N_met)
     met_gp_ids = []
@@ -101,70 +101,72 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
     r_met = np.array([np.max([np.sqrt(np.sum((mu_met[i,:] - l)**2)) for l in met_locs[z_gen[:,i]==1,:]]) for i in
              range(mu_met.shape[0])])
 
-    betas = np.random.normal(0, np.sqrt(beta_var), size = (N_bug_clusters+1, N_met_clusters))
-    alphas = st.bernoulli(0.5).rvs((N_bug_clusters, N_met_clusters))
-    cluster_starts = np.arange(1, np.int(N_bug_clusters * cluster_disparity) + 1, cluster_disparity)
-    cluster_ends = cluster_starts[1:] - cluster_disparity/10
-    cluster_ends = np.append(cluster_ends, cluster_starts[-1] + cluster_disparity - cluster_disparity/10)
-    if N_bug_clusters==2 and N_met_clusters==2:
-        betas = np.array([[-1,7],[-2.2,0.5],[0,3]])
-        alphas = np.array([[1, 1], [0, 1]])
-        cluster_starts = [10,110]
-        cluster_ends = [100, 200]
-    X = np.zeros((N_samples, N_bug))
+    if not deterministic:
+        betas = np.random.normal(0, np.sqrt(beta_var), size = (N_bug_clusters+1, N_met_clusters))
+        alphas = st.bernoulli(0.5).rvs((N_bug_clusters, N_met_clusters))
+        cluster_starts = np.arange(1, np.int(N_bug_clusters * cluster_disparity) + 1, cluster_disparity)
+        cluster_ends = cluster_starts[1:] - cluster_disparity/10
+        cluster_ends = np.append(cluster_ends, cluster_starts[-1] + cluster_disparity - cluster_disparity/10)
+    else:
+        betas = np.zeros((11,10))
+        betas[0,:] = [-1,1,-1.3,1.3,-0.4,0.4,-1.7,1.7,-0.6,0.6]
+        vals = [-2.2,3.1,-5.4,4.3,-1.5,2.7,-3.3,0.8,-5.9,4.9]
+        betas[1:,:] = np.diag(vals)
+        betas = betas[:N_bug_clusters+1, :N_met_clusters]
+        alphas = np.ones((N_bug_clusters, N_met_clusters))
+        cluster_starts = np.arange(200,200+(100*10) + 20, 200)
+        cluster_ends = np.arange(300,300+(100*10) + 20, 200)
 
+
+    X = np.zeros((N_samples, N_bug))
     if len(w_gen.shape)>2:
         temp2 = w_gen[:,:,0]
     else:
         temp2 = w_gen
+    g = np.zeros((N_samples, N_bug_clusters))
     for i in range(N_bug_clusters):
+        g[:,i] = st.uniform(cluster_starts[i], cluster_ends[i]-cluster_starts[i]).rvs(size = N_samples)
         outer_ixs = np.where(temp2[:,i]==1)[0]
+        conc = np.repeat(g[:, i:i+1], len(outer_ixs), axis = 1) / len(outer_ixs)
+        p = [st.dirichlet(conc[n,:]).rvs() for n in range(conc.shape[0])]
         if N_local_clusters <= 1:
-            X[:, outer_ixs] = st.uniform(cluster_starts[i], cluster_ends[i]-cluster_starts[i]).rvs(size=(N_samples, len(outer_ixs)))
+            X[:, outer_ixs] = np.stack([st.multinomial(int(np.round(g[n,i])), p[n].squeeze()).rvs() for n in range(len(p))]).squeeze()
         else:
             for dix in outer_ixs:
                 ixs = np.where(temp[:, dix]==1)[0]
-                X[:, ixs] = st.uniform(cluster_starts[i], cluster_ends[i]-cluster_starts[i]).rvs(size=(N_samples, len(ixs)))
+                conc = np.repeat(g[:, i:i + 1], len(ixs), axis=1) / len(ixs)
+                p = [st.dirichlet(conc[n, :]).rvs() for n in range(conc.shape[0])]
+                X[:, ixs] = np.stack([st.multinomial(int(np.round(g[n,i])), p[n].squeeze()).rvs() for n in range(len(p))]).squeeze()
 
-    b = X@temp
     if N_local_clusters > 1:
         temp_w = np.repeat(w_gen[:,:,np.newaxis], N_samples, axis = 2)
-        b = np.sum(temp_w*b.T,1).T
+        g = np.sum(temp_w*x.T,1).T
 
     y = np.zeros((N_samples, N_met))
-    for k in range(z_gen.shape[1]):
-        vals = np.zeros((N_samples, N_met))
-        ix = np.where(z_gen[:,k]==1)[0]
-        cluster_vals = betas[0,k] + b@(betas[1:,k]*alphas[:,k])
-        vals[:, ix] = np.random.normal(cluster_vals/len(ix), cluster_noise, size = (len(ix), N_samples)).T
-        which_sum = np.random.choice(ix,1)[0]
-        vals[:, which_sum] = 0
-        total_sum = np.sum(vals,1)
-        vals[:, which_sum] = cluster_vals - total_sum
-        y[:, ix] = vals[:, ix]
-
-    y = y + np.random.normal(0,meas_var, size = y.shape)
-
+    for j in range(N_met):
+        k = np.argmax(z_gen[j,:])
+        y[:, j] = np.random.normal(betas[0,k] + g@(betas[1:,k]*alphas[:,k]), meas_var)
     return X, y, betas, alphas, w_gen, z_gen, bug_locs, met_locs, mu_bug, mu_met, r_bug, r_met, temp
 
 
 if __name__ == "__main__":
-    N_bug = 5
-    N_met = 5
-    K=2
-    L=2
+    N_bug = 20
+    N_met = 20
+    K=3
+    L=3
     n_local_clusters = 1
     cluster_per_met_cluster = 0
     meas_var = 0.001
     path = 'debug/'
     if not os.path.isdir(path):
         os.mkdir(path)
-    repeat_clusters = 1
+    repeat_clusters = 0
 
     x, y, gen_beta, gen_alpha, gen_w, gen_z, gen_bug_locs, gen_met_locs, mu_bug, \
     mu_met, r_bug, r_met, gen_u = generate_synthetic_data(
         N_met = N_met, N_bug = N_bug, N_met_clusters = K, N_local_clusters = n_local_clusters, N_bug_clusters = L,
-        meas_var = meas_var, cluster_per_met_cluster= cluster_per_met_cluster, repeat_clusters=repeat_clusters)
+        meas_var = meas_var, cluster_per_met_cluster= cluster_per_met_cluster, repeat_clusters=repeat_clusters,
+    N_samples=1000)
 
     range_x = np.max(gen_met_locs[:, 0]) - np.min(gen_met_locs[:, 0])
     range_y = np.max(gen_met_locs[:, 1]) - np.min(gen_met_locs[:, 1])

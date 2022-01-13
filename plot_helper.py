@@ -19,8 +19,7 @@ from matplotlib.pyplot import cm
 def plot_syn_data(path, x, y, gen_z, gen_bug_locs, gen_met_locs,
                   mu_bug, r_bug, mu_met, r_met, gen_u):
     fig, ax = plt.subplots(1, 2, figsize = (10,5))
-    fig2, ax2 = plt.subplots(2, 1)
-    fig3, ax3 = plt.subplots(2,1)
+    fig2, ax2 = plt.subplots(3, 1)
     p1 = ax[0].scatter(gen_bug_locs[:, 0], gen_bug_locs[:, 1], color = 'k')
     for i in range(gen_bug_locs.shape[0]):
         ax[0].text(gen_bug_locs[i, 0], gen_bug_locs[i, 1], str(i))
@@ -53,13 +52,14 @@ def plot_syn_data(path, x, y, gen_z, gen_bug_locs, gen_met_locs,
     if bins <= 10:
         bins = 10
     for k in range(b.shape[1]):
-        ax3[0].hist(b[:,k].flatten(), range = (b.min(), b.max()), label = 'Cluster ' + str(k), alpha = 0.5, bins = bins)
-    ax3[0].set_title('Histogram of microbe cluster sums')
-    ax3[0].legend()
+        ax2[1].hist(b[:,k].flatten(), range = (b.min(), b.max()), label = 'Cluster ' + str(k), alpha = 0.5, bins = bins)
+    ax2[1].set_title('Histogram of microbe cluster sums')
+    ax2[1].legend(loc = 'upper right')
     # ax3[0].set_aspect('equal')
 
-    ax[0].legend()
-    ax2[0].legend()
+    ax[0].legend(loc = 'upper right')
+    ax2[0].legend(loc = 'upper right')
+    ax2[1].legend(loc = 'upper right')
     for i in range(gen_z.shape[1]):
         ix = np.where(gen_z[:, i] == 1)[0]
         p2 = ax[1].scatter(gen_met_locs[ix, 0], gen_met_locs[ix, 1])
@@ -75,33 +75,22 @@ def plot_syn_data(path, x, y, gen_z, gen_bug_locs, gen_met_locs,
         bins = int((y.max() - y.min())/5)
         if bins<=10:
             bins = 10
-        ax2[1].hist(y[:, ix].flatten(), range=(y.min(), y.max()),
+        ax2[2].hist(y[:, ix].flatten(), range=(y.min(), y.max()),
                     label='Cluster ' + str(i), alpha=0.5, bins = bins)
-    ax2[1].set_xlabel('Standardized metabolite levels')
-    ax2[1].set_ylabel('# Metabolites in Cluster x\n# Samples Per Metabolite', fontsize = 10)
-    ax2[1].set_title('Metabolites')
+    ax2[2].set_xlabel('Standardized metabolite levels')
+    ax2[2].set_ylabel('# Metabolites in Cluster x\n# Samples Per Metabolite', fontsize = 10)
+    ax2[2].set_title('Metabolites')
 
-    g = y@gen_z
-    bins = int((g.max() - g.min()) / 5)
-    if bins <= 10:
-        bins = 10
-    for k in range(g.shape[1]):
-        ax3[1].hist(g[:,k].flatten(), range = (g.min(), g.max()), label = 'Cluster ' + str(k), alpha = 0.5, bins = bins)
-    ax3[1].set_title('Histogram of metabolite cluster sums')
-    ax3[1].legend()
-    # ax3[1].set_aspect('equal')
 
     ax[1].set_aspect('equal')
-    ax[1].legend()
-    ax2[1].legend()
+    ax[1].legend(loc = 'upper right')
+    ax2[1].legend(loc = 'upper right')
     fig.tight_layout()
     fig.savefig(path + 'embedded_locations.pdf')
     fig2.tight_layout()
     fig2.savefig(path + 'cluster_histogram.pdf')
     plt.close(fig)
     plt.close(fig2)
-    fig3.savefig(path + 'cluster_sum_hist.pdf')
-    plt.close(fig3)
 
 def plot_distribution(dist, param, true_val = None, ptype = 'init', path = '', **kwargs):
     if ptype == 'init':
@@ -141,7 +130,7 @@ def plot_distribution(dist, param, true_val = None, ptype = 'init', path = '', *
                         ax[i].axvline(tv[j], c='r', label=label)
                     else:
                         ax[i].axvline(tv[j], c='r')
-                ax[i].legend()
+                ax[i].legend(loc = 'upper right')
     else:
         fig, ax = plt.subplots()
         bins = 10
@@ -159,7 +148,7 @@ def plot_distribution(dist, param, true_val = None, ptype = 'init', path = '', *
                     ax.axvline(tv[k], c = 'r', label = label)
                 else:
                     ax.axvline(tv[k], c='r')
-                ax.legend()
+                ax.legend(loc = 'upper right')
     r = [k + '_' + str(np.round(item,2)).replace('.','d') for k, item in kwargs.items()]
     if not os.path.isdir(path + '/' + ptype + 's/'):
         os.mkdir(path + '/' + ptype + 's/')
@@ -171,8 +160,8 @@ def plot_param_traces(path, param_dict, params2learn, true_vals, net, fold):
     fig_dict, ax_dict = {},{}
     for name, plist in param_dict.items():
         n = plist[0].squeeze().shape[0]
-        if n > 10:
-            n = 10
+        if n > 50:
+            n = 50
         if len(plist[0].squeeze().shape)==1:
             fig_dict[name], ax_dict[name] = plt.subplots(n,
                                                          figsize=(5, 4 * n))
@@ -193,7 +182,7 @@ def plot_param_traces(path, param_dict, params2learn, true_vals, net, fold):
                         ax_dict[name][k].plot([true_vals[name][k]] * len(trace), c='r', label='True')
                     ax_dict[name][k].set_title(name + ', ' + str(k))
                     ax_dict[name][k].set_ylim(net.range_dict[name])
-                    ax_dict[name][k].legend()
+                    ax_dict[name][k].legend(loc = 'upper right')
                     ax_dict[name][k].set_xlabel('Iterations')
                     ax_dict[name][k].set_ylabel('Parameter Values')
                 else:
@@ -204,14 +193,14 @@ def plot_param_traces(path, param_dict, params2learn, true_vals, net, fold):
                             ax_dict[name][k, j].plot([true_vals[name][k, j]] * len(trace), c='r', label='True')
                         ax_dict[name][k, j].set_title(name + ', ' + str(k) + ', ' + str(j))
                         ax_dict[name][k, j].set_ylim(net.range_dict[name])
-                        ax_dict[name][k, j].legend()
+                        ax_dict[name][k, j].legend(loc = 'upper right')
                         ax_dict[name][k, j].set_xlabel('Iterations')
                         ax_dict[name][k, j].set_ylabel('Parameter Values')
             fig_dict[name].tight_layout()
             fig_dict[name].savefig(path + 'fold' + str(fold) + '_' + name + '_parameter_trace.pdf')
             plt.close(fig_dict[name])
 
-def plot_output_locations(path, net, best_mod, param_dict, fold, type = 'best'):
+def plot_output_locations(path, net, best_mod, param_dict, fold, gen_w, type = 'best'):
     if 'w' not in param_dict.keys():
         best_w = param_dict['u'][best_mod]
     else:
@@ -225,6 +214,9 @@ def plot_output_locations(path, net, best_mod, param_dict, fold, type = 'best'):
                 for i in range(best_w.shape[1]):
                     ix = np.where(best_w[:,i, k] > 0.5)[0]
                     p2 = ax[k].scatter(net.microbe_locs[ix, 0], net.microbe_locs[ix, 1])
+                    ix_true = np.where(gen_w[:,i,k]>0.5)[0]
+                    ax[k].scatter(net.microbe_locs[ix_true, 0], net.microbe_locs[ix_true, 1], facecolors = 'none',
+                                  edgecolors = 'k')
                     ax[k].scatter(best_mu[i, 0, k], best_mu[i, 1, k], marker='*', color=p2.get_facecolor().squeeze())
                     ax[k].text(best_mu[i, 0, k], best_mu[i, 1, k], 'predicted\ncluster ' + str(i) + ' mean')
                     ax[k].set_title('Microbe clusters for metabolite cluster ' + str(k))
@@ -238,6 +230,9 @@ def plot_output_locations(path, net, best_mod, param_dict, fold, type = 'best'):
                 ix = np.where(best_w[:,i] > 0.5)[0]
                 p2 = ax.scatter(net.microbe_locs[ix, 0], net.microbe_locs[ix, 1])
                 ax.scatter(best_mu[i, 0], best_mu[i, 1], marker='*', color=p2.get_facecolor().squeeze())
+                ix_true = np.where(gen_w[:, i] > 0.5)[0]
+                ax.scatter(net.microbe_locs[ix_true, 0], net.microbe_locs[ix_true, 1], facecolors='none',
+                              edgecolors='k')
                 ax.text(best_mu[i, 0], best_mu[i, 1], 'predicted\ncluster ' + str(i) + ' mean')
                 ax.set_title('Microbes')
                 circle2 = plt.Circle((best_mu[i, 0], best_mu[i, 1]), best_r[i],
@@ -271,7 +266,7 @@ def plot_output_locations(path, net, best_mod, param_dict, fold, type = 'best'):
 
                         ax[k,i].add_patch(circle2)
                     ax[k,i].set_aspect('equal')
-                    ax[k,i].legend()
+                    ax[k,i].legend(loc = 'upper right')
         else:
             fig, ax = plt.subplots(1, best_w.shape[0], figsize=(5 * best_w.shape[0], 5))
             # iterate over rules
@@ -297,7 +292,7 @@ def plot_output_locations(path, net, best_mod, param_dict, fold, type = 'best'):
 
                     ax[i].add_patch(circle2)
                 ax[i].set_aspect('equal')
-                ax[i].legend()
+                ax[i].legend(loc = 'upper right')
     fig.tight_layout()
     fig.savefig(path + 'fold' + str(fold) + '-' + type + '-bug_clusters.pdf')
     plt.close(fig)
@@ -321,12 +316,28 @@ def plot_output_locations(path, net, best_mod, param_dict, fold, type = 'best'):
     fig.savefig(path + 'fold' + str(fold) + '-' + type + '-predicted_metab_clusters.pdf')
     plt.close(fig)
 
+def plot_xvy(path, net, x, out_vec, best_mod, param_dict, microbe_locs, seed):
+    out = out_vec[best_mod]
+    kappa = np.stack(
+        [((param_dict[seed]['mu_bug'][best_mod] - microbe_locs[m, :]) ** 2).sum(-1) for m in range(microbe_locs.shape[0])])
+    u = sigmoid((param_dict[seed]['r_bug'][best_mod] - kappa) / net.temp_scheduled)
+    microbe_sum = x @ u
+    fig, ax = plt.subplots(out.shape[1], 1, figsize = (8,8*out.shape[1]))
+    for i in range(out.shape[1]):
+        ax[i].scatter(microbe_sum[:,i], out[:,i].detach().numpy())
+        ax[i].set_xlabel('Microbe sum')
+        ax[i].set_ylabel('y')
+        ax[i].set_title('Cluster ' + str(i))
+    fig.tight_layout()
+    fig.savefig(path + 'fold' + str(seed) + '-sum_x_v_y.pdf')
+    plt.close(fig)
+
 def plot_rules_detectors_tree(path, net, best_mod, param_dict, microbe_locs, seed):
     N_bug = microbe_locs.shape[0]
     num_rules = param_dict['w'][best_mod].shape[0]
     num_detectors = param_dict['w'][best_mod].shape[1]
     kappa = np.stack([((param_dict['mu_bug'][best_mod] - microbe_locs[m,:])**2).sum(-1) for m in range(microbe_locs.shape[0])])
-    u = sigmoid((param_dict['r_bug'][best_mod] - kappa)/net.temp_grouper)
+    u = sigmoid((param_dict['r_bug'][best_mod] - kappa)/net.temp_scheduled)
     u = np.hstack([u[:,:,i] for i in range(u.shape[-1])])
 
     widest = max([u.shape[1], num_rules*num_detectors])
@@ -386,7 +397,7 @@ def plot_output(path, path_orig, best_mod, out_vec, targets, gen_z,  param_dict,
         ax_dict2[met].hist(targets[:, met], range=(total.min(), total.max()),
                                  label='true', alpha=0.5, bins = bins)
         ax_dict2[met].set_title('Metabolite ' + str(met) + ', Cluster ' + str(cluster_id))
-        ax_dict2[met].legend()
+        ax_dict2[met].legend(loc = 'upper right')
         ax_dict2[met].set_xlabel('Metabolite Levels')
         ax_dict2[met].set_ylabel('# Samples Per Metabolite')
     fig_dict2.tight_layout()
@@ -404,7 +415,7 @@ def plot_output(path, path_orig, best_mod, out_vec, targets, gen_z,  param_dict,
         ax_dict3[cluster].hist(targets[:, met_ids].flatten(), range=(total.min(), total.max()), label='true',
                                      alpha=0.5, bins = bins)
         ax_dict3[cluster].set_title('Cluster ' + str(cluster))
-        ax_dict3[cluster].legend()
+        ax_dict3[cluster].legend(loc = 'upper right')
         ax_dict3[cluster].set_xlabel('Metabolite Levels')
         ax_dict3[cluster].set_ylabel('# Metabolites in Cluster x\n# Samples Per Metabolite')
     fig_dict3.tight_layout()
@@ -420,8 +431,8 @@ def plot_loss(fig3, ax3, fold, iterations, loss_vec, test_loss=None, lowest_loss
         xvals = np.arange(0, iterations, 100)
     if test_loss is not None:
         ax3.plot(xvals, test_loss, label='test loss')
-        ax3.legend()
+        ax3.legend(loc = 'upper right')
     if lowest_loss is not None:
         ax3.plot(np.arange(iterations), lowest_loss, label='lowest loss')
-        ax3.legend()
+        ax3.legend(loc = 'upper right')
     return fig3, ax3

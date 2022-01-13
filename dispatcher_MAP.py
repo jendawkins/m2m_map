@@ -67,14 +67,14 @@ N_met = 25
 N_bug = 25
 learn = 'all'
 pid_list = []
-meas_var = 0.001
+meas_var = 0.01
 repeat_clusters = 0
 priors = 'all'
 for seed in range(10):
     # for meas_var in [0.01, 1]:
-    for L, K in [(2,2),(3,3),(6,6)]:
+    for L, K in [(2,2),(3,3),(4,4)]:
         # for repeat_clusters in [0, 1]:
-        for N_met, N_bug in [(20,20),(30,30)]:
+        for N_met, N_bug in [(25,25)]:
             f = open('m2m.lsf', 'w')
             f.write(my_str.format(learn, priors, N_met, N_bug, L, K, meas_var, seed, repeat_clusters, args.load, args.case, args.iter))
             f.close()

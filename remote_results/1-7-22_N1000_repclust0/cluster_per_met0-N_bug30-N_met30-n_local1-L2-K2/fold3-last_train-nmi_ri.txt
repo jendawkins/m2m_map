@@ -1,9 +1,0 @@
-Epoch 1001: NMI 0.0, RI NA
-Epoch 2001: NMI 0.0, RI NA
-Epoch 3001: NMI 0.0, RI NA
-Epoch 4001: NMI 0.0, RI NA
-Epoch 5001: NMI 0.0, RI NA
-Epoch 6001: NMI 0.708, RI NA
-Epoch 7001: NMI 1.0, RI NA
-Epoch 8001: NMI 1.0, RI NA
-Epoch 9001: NMI 1.0, RI NA

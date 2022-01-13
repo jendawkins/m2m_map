@@ -66,6 +66,8 @@ path_modules = 'kegg/modules/'
 if not os.path.isdir(path_modules):
     os.mkdir(path_modules)
 edge_dict = {}
+plus_dict = {}
+rxn_dict = {}
 for pathway in unique_pathways:
     ix += 1
     if not os.path.isfile(path_pathways + pathway + '.pkl'):
@@ -86,6 +88,8 @@ for pathway in unique_pathways:
         doc = pkl.load(f)
 
     edge_dict[pathway] = []
+    plus_dict[pathway] = []
+    rxn_dict[pathway] = []
 
     pattern = re.compile(r'[\s] M ?[0-9][^\s]+')
     modules = pattern.findall(doc)
@@ -112,17 +116,26 @@ for pathway in unique_pathways:
         rxns = pattern2.findall(doc2)
         for rxn in rxns:
             rx = ''.join(rxn)
+            rxn_dict[pathway].append(rx)
             ba = rx.split(' -> ')
             before = ba[0].split(' + ')
             after = ba[1].split(' + ')
-            for b in before:
-                for a in after:
-                    edges.append((b, a))
-                    edge_dict[pathway].append((b, a))
+            edge_dict[pathway].extend(list(itertools.product(before, after)))
+            plus_dict[pathway].extend(list(itertools.combinations(before,2)))
+            plus_dict[pathway].extend(list(itertools.combinations(after, 2)))
+
 
     if ix % 100 == 0:
         print(ix)
+    edge_dict[pathway] = np.unique(edge_dict[pathway])
+    plus_dict[pathway] = np.unique(plus_dict[pathway])
+    rxn_dict[pathway] = np.unique(rxn_dict[pathway])
 
 with open('kegg/edge_dict.pkl', 'wb') as f:
     pkl.dump(edge_dict, f)
 
+with open('kegg/plus_dict.pkl', 'wb') as f:
+    pkl.dump(plus_dict, f)
+
+with open('kegg/rxn_dict.pkl', 'wb') as f:
+    pkl.dump(rxn_dict, f)
