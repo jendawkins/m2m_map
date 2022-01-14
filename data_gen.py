@@ -114,9 +114,10 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
         betas[1:,:] = np.diag(vals)
         betas = betas[:N_bug_clusters+1, :N_met_clusters]
         alphas = np.ones((N_bug_clusters, N_met_clusters))
-        cluster_starts = np.arange(200,200+(100*10) + 20, 200)
-        cluster_ends = np.arange(300,300+(100*10) + 20, 200)
-
+        # cluster_starts = np.arange(200,200+(100*10) + 20, 200)
+        # cluster_ends = np.arange(300,300+(100*10) + 20, 200)
+        cluster_starts = [100,350,510,650,870,1000,1200,1400,1600,1800]
+        cluster_ends = [250,410,550,770,900,1100,1300,1500,1700,1900]
 
     X = np.zeros((N_samples, N_bug))
     if len(w_gen.shape)>2:

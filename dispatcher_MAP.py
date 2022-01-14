@@ -54,7 +54,7 @@ echo $TMPDIR
 # Add your job command here
 
 cd /PHShome/jjd65/m2m_map
-python3 ./main_MAP.py -learn {0} -priors {1} -N_met {2} -N_bug {3} -L {4} -K {5} -meas_var {6} -seed {7} -rep_clust {8} -load {9} -case {10} -iterations {11}
+python3 ./main_MAP.py -learn {0} -priors {1} -N_met {2} -N_bug {3} -L {4} -K {5} -meas_var {6} -seed {7} -load {8} -case {9} -iterations {10}
 '''
 
 parser = argparse.ArgumentParser()
@@ -68,7 +68,6 @@ N_bug = 25
 learn = 'all'
 pid_list = []
 meas_var = 0.01
-repeat_clusters = 0
 priors = 'all'
 for seed in range(10):
     # for meas_var in [0.01, 1]:
@@ -76,6 +75,6 @@ for seed in range(10):
         # for repeat_clusters in [0, 1]:
         for N_met, N_bug in [(25,25)]:
             f = open('m2m.lsf', 'w')
-            f.write(my_str.format(learn, priors, N_met, N_bug, L, K, meas_var, seed, repeat_clusters, args.load, args.case, args.iter))
+            f.write(my_str.format(learn, priors, N_met, N_bug, L, K, meas_var, seed, args.load, args.case, args.iter))
             f.close()
             os.system('bsub < {}'.format('m2m.lsf'))

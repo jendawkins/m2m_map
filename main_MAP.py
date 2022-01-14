@@ -172,6 +172,7 @@ if __name__ == "__main__":
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     parser = argparse.ArgumentParser()
     parser.add_argument("-learn", "--learn", help="params to learn", type=str, nargs='+')
+    parser.add_argument("-fix", "--fix", help="params to fix", type=str, nargs='+')
     parser.add_argument("-priors", "--priors", help="priors to set", type=str, nargs='+')
     parser.add_argument("-case", "--case", help="case", type=str)
     parser.add_argument("-N_met", "--N_met", help="N_met", type=int)
@@ -203,7 +204,7 @@ if __name__ == "__main__":
     case = '1-13-22'
     if args.rep_clust:
         case = case + '_repclust' + str(args.rep_clust)
-    iterations = 30001
+    iterations = 20001
     seed = 0
     load = 1
     cluster_per_met_cluster = 0
@@ -275,6 +276,14 @@ if __name__ == "__main__":
         priors2set = ['z','w','alpha','beta','mu_bug','mu_met','r_bug','r_met','pi_met']
         if n_local_clusters<=1:
             priors2set.remove('w')
+        if len(args.fix) > 0:
+            params2learn = priors2set.copy()
+            for p in args.fix:
+                priors2set.remove(p)
+                params2learn.remove(p)
+
+    print(params2learn)
+    print(priors2set)
     x, y, gen_beta, gen_alpha, gen_w, gen_z, gen_bug_locs, gen_met_locs, mu_bug, \
     mu_met, r_bug, r_met, gen_u = generate_synthetic_data(
         N_met = N_met, N_bug = N_bug, N_met_clusters = K, N_local_clusters = n_local_clusters,
