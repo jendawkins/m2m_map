@@ -3,8 +3,8 @@ from main_MAPv0 import *
 my_str = '''
 #!/bin/bash
 #BSUB -J m2m
-#BSUB -o m2m_L{4}_K{5}.out
-#BSUB -e m2m_L{4}_K{5}.err
+#BSUB -o case{9}_L{4}_K{5}.out
+#BSUB -e case{9}_m2m_L{4}_K{5}.err
 
 # This is a sample script with specific resource requirements for the
 # **bigmemory** queue with 64GB memory requirement and memory

@@ -276,7 +276,7 @@ if __name__ == "__main__":
         priors2set = ['z','w','alpha','beta','mu_bug','mu_met','r_bug','r_met','pi_met']
         if n_local_clusters<=1:
             priors2set.remove('w')
-        if len(args.fix) > 0:
+        if args.fix > 0:
             params2learn = priors2set.copy()
             for p in args.fix:
                 priors2set.remove(p)
