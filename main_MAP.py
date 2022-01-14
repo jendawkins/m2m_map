@@ -276,7 +276,7 @@ if __name__ == "__main__":
         priors2set = ['z','w','alpha','beta','mu_bug','mu_met','r_bug','r_met','pi_met']
         if n_local_clusters<=1:
             priors2set.remove('w')
-        if args.fix > 0:
+        if args.fix:
             params2learn = priors2set.copy()
             for p in args.fix:
                 priors2set.remove(p)
@@ -366,21 +366,6 @@ if __name__ == "__main__":
         print('no model loaded')
 
     x = torch.Tensor(x).to(device)
-    # for name, parameter in net_.named_parameters():
-    #     if 'r' in name:
-    #         setattr(net_, name, nn.Parameter(torch.log(torch.Tensor(true_vals[name])), requires_grad=False))
-    #     elif 'pi' in name:
-    #         val = torch.Tensor(true_vals[name])
-    #         val = torch.log(val) + torch.log(torch.exp(val).sum())
-    #         setattr(net_, name, nn.Parameter(val, requires_grad=False))
-    #     else:
-    #         setattr(net_, name, nn.Parameter(torch.Tensor(true_vals[name]), requires_grad=False))
-    # net_.z_act, net_.w_act = torch.softmax(net_.z / 0.1, 1), torch.softmax(net_.w / 0.1, 1)
-    # net_.alpha[net_.alpha == 0] = -1
-    # net_.alpha_act = torch.sigmoid(net_.alpha / 0.1)
-    # # lowest_loss = criterion_.compute_loss(torch.Tensor(targets), torch.Tensor(targets))
-    # _, lowest_loss = net_(x, torch.Tensor(y))
-    # print('Lowest Loss:' + str(lowest_loss.item()))
     cluster_targets = np.stack([y[:,np.where(gen_z[:,i]==1)[0][0]] for i in np.arange(gen_z.shape[1])]).T
     timer = []
     end_learning = False
