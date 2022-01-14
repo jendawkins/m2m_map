@@ -17,3 +17,4 @@ results_MAP/.DS_Store
 results_MAP/
 pubchem/
 pubchem_isomeric/
+*.txt
