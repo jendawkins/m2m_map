@@ -71,7 +71,7 @@ meas_var = 0.01
 priors = 'all'
 for seed in range(10):
     # for meas_var in [0.01, 1]:
-    for L, K in [(2,2),(3,3),(4,4)]:
+    for L, K in [(3,3),(4,4)]:
         # for repeat_clusters in [0, 1]:
         for N_met, N_bug in [(25,25)]:
             f = open('m2m.lsf', 'w')
