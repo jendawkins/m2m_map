@@ -481,7 +481,7 @@ if __name__ == "__main__":
                 plt.close(fig3)
 
 
-        if (epoch%10 == 0 and epoch != 0) or end_learning:
+        if (epoch%1000 == 0 and epoch != 0) or end_learning:
             print('Epoch ' + str(epoch) + ' Loss: ' + str(loss_vec[-1]))
             print('Tau: ' + str(net.temp_scheduled))
             print('')

@@ -228,6 +228,8 @@ def plot_output_locations(path, net, best_mod, param_dict, fold, gen_w, type = '
             fig, ax = plt.subplots(figsize=(5, 5))
             for i in range(best_w.shape[1]):
                 ix = np.where(best_w[:,i] > 0.5)[0]
+                if len(ix) == 0:
+                    continue
                 p2 = ax.scatter(net.microbe_locs[ix, 0], net.microbe_locs[ix, 1])
                 ax.scatter(best_mu[i, 0], best_mu[i, 1], marker='*', color=p2.get_facecolor().squeeze())
                 ix_true = np.where(gen_w[:, i] > 0.5)[0]
@@ -303,6 +305,8 @@ def plot_output_locations(path, net, best_mod, param_dict, fold, gen_w, type = '
     best_r = param_dict['r_met'][best_mod]
     for i in range(param_dict['z'][0].shape[1]):
         ix = np.where(best_z == i)[0]
+        if len(ix) == 0:
+            continue
         p2 = ax.scatter(net.met_locs[ix, 0], net.met_locs[ix, 1])
         ax.scatter(best_mu[i, 0], best_mu[i, 1], marker='*', color=p2.get_facecolor().squeeze())
         ax.text(best_mu[i, 0], best_mu[i, 1], 'predicted\ncluster ' + str(i) + ' mean')
