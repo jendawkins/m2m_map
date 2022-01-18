@@ -52,7 +52,8 @@ echo '---TEMPORARY SCRATCH FOLDER ($TMPDIR):---'
 echo $TMPDIR
 
 # Add your job command here
-
+module load Anaconda3/5.2.0
+source activate dispatcher
 cd /PHShome/jjd65/m2m_map
 python3 ./main_MAP.py -learn {0} -priors {1} -N_met {2} -N_bug {3} -L {4} -K {5} -meas_var {6} -seed {7} -load {8} -case {9} -iterations {10}
 '''

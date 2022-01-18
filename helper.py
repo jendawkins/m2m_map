@@ -23,6 +23,9 @@ from torch.distributions.normal import Normal
 import torch.nn as nn
 import time
 
+def smoothmax(x, tau = 1):
+    return torch.sum(x*torch.exp(x/tau))/torch.sum(torch.exp(x/tau))
+
 def euc_dist(x,y):
     return np.sqrt(np.sum([(x[i] - y[i])**2 for i in range(len(x))]))
 

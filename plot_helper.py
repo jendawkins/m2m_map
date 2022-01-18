@@ -388,7 +388,7 @@ def plot_output(path, path_orig, best_mod, out_vec, targets, gen_z,  param_dict,
 
     for met in range(targets.shape[1]):
         cluster_id = np.where(gen_z[met, :] == 1)[0]
-        range_ratio = (preds[:, met].max() - preds[:, met].min()) / (total.max() - total.min())
+        # range_ratio = (preds[:, met].max() - preds[:, met].min()) / (total.max() - total.min())
         bins = int((total.max() - total.min())/5)
         if bins<10:
             bins = 10
@@ -406,7 +406,6 @@ def plot_output(path, path_orig, best_mod, out_vec, targets, gen_z,  param_dict,
 
     for cluster in range(gen_z.shape[1]):
         met_ids = np.where(gen_z[:, cluster] == 1)[0]
-        range_ratio = (preds[:, met_ids].max() - preds[:, met_ids].min()) / (total.max() - total.min())
         bins = int((total.max() - total.min()) / 5)
         if bins<10:
             bins = 10

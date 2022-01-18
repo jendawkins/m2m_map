@@ -59,7 +59,7 @@ class Concrete():
         if not torch.is_tensor(x):
             x = torch.Tensor(x)
         n = len(x)
-        C = math.factorial(n-1)*self.tau.pow(n-1)
+        C = math.factorial(n-1)*self.tau.pow(n-1).item()
         tot = ((self.loc.squeeze()*x.pow(-self.tau-1))/(self.loc.squeeze()*x.pow(-self.tau)).sum(0)).prod(0)
         return C*tot
 
