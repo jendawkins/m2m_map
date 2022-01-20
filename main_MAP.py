@@ -41,7 +41,6 @@ class Model(nn.Module):
         self.microbe_locs = microbe_locs
         self.embedding_dim = met_locs.shape[1]
         self.seed = seed
-        self.alpha_loc = 1.
         self.tau_transformer = tau_transformer
         self.learn_num_clusters = learn_num_clusters
 
@@ -54,6 +53,7 @@ class Model(nn.Module):
             self.L, self.K = L, K
             self.L_sm, self.K_sm = L, K
 
+        self.alpha_loc = 1/(self.L_sm*self.K_sm)
         range = np.array([np.max(self.met_locs[:, d]) - np.min(self.met_locs[:, d]) for d in np.arange(self.met_locs.shape[1])])
         self.r_scale_met = np.sqrt(np.sum(range**2)) / (self.K_sm * 2)
 
@@ -183,8 +183,8 @@ class Model(nn.Module):
     #@profile
     def forward(self, x, y):
         kappa = torch.stack([torch.sqrt(((self.mu_bug - torch.tensor(self.microbe_locs[m,:])).pow(2)).sum(-1)) for m in range(self.microbe_locs.shape[0])])
-        self.u = torch.sigmoid((torch.exp(self.r_bug) - kappa)/self.tau_transformer)
         epsilon = self.temp_scheduled / 4
+        self.u = (1-2*epsilon) * torch.sigmoid((torch.exp(self.r_bug) - kappa)/self.tau_transformer) + epsilon
         if len(self.u.shape)>2:
             g = torch.einsum('ij,jkl->ikl', x, self.u.float())
             if not self.cluster_per_met_cluster:
@@ -232,16 +232,16 @@ if __name__ == "__main__":
     K=2
     n_local_clusters = 1
     L = 2
-    N_met, N_bug = 5,5
-    params2learn = ['r_bug','r_met','z']
-    priors2set = ['r_bug','r_met','z']
+    N_met, N_bug = 25,25
+    params2learn = 'all'
+    priors2set = 'all'
     n_nuisance = 0
     meas_var = 0.01
     prior_meas_var = 1e6
-    case = '1-18'
+    case = '1-14-22_no-repeat'
     if args.rep_clust:
         case = case + '_repclust' + str(args.rep_clust)
-    iterations = 20001
+    iterations = 40001
     seed = 0
     load = 1
     cluster_per_met_cluster = 0
@@ -249,6 +249,7 @@ if __name__ == "__main__":
     lr = 0.001
     N_samples = 1000
     learn_num_clusters = 0
+    path = 'remote_results/'
 
     if args.K is not None:
         K = args.K
@@ -284,6 +285,8 @@ if __name__ == "__main__":
         cluster_per_met_cluster = args.cluster_per_met_cluster
     if args.rep_clust is not None:
         repeat_clusters = args.rep_clust
+    if args.learn_clusters is not None:
+        learn_num_clusters = args.learn_clusters
 
     # n_splits = 2
     use_MAP = True
@@ -292,7 +295,6 @@ if __name__ == "__main__":
     # info = 'meas_var' + str(meas_var).replace('.', 'd') + '-prior_mvar' + str(prior_meas_var).replace('.', 'd') + \
     #        '-lr' + str(lr).replace('.','d')
     info = 'cluster_per_met' + str(cluster_per_met_cluster)
-    path = 'results_MAP/'
     # path = 'remote_results/'
 
     path = path + case.replace(' ','_')
@@ -304,6 +306,7 @@ if __name__ == "__main__":
         if not os.path.isdir(path):
             os.mkdir(path)
 
+    # path = path + '/' + info + '-N_bug' + str(N_bug) + '-N_met' + str(N_met) + '-L' + str(L) + '-K' + str(K) +'/'
     path = path + '/' + info + '-N_bug' + str(N_bug) + '-N_met' + str(N_met) + '-n_local' + str(n_local_clusters) + '-L' + str(L) + '-K' + str(K) +'/'
     if not os.path.isdir(path):
         os.mkdir(path)

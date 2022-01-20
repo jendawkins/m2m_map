@@ -321,14 +321,13 @@ def plot_output_locations(path, net, best_mod, param_dict, fold, gen_w, type = '
     plt.close(fig)
 
 def plot_xvy(path, net, x, out_vec, best_mod, param_dict, microbe_locs, seed):
-    out = out_vec[best_mod]
-    kappa = np.stack(
-        [((param_dict[seed]['mu_bug'][best_mod] - microbe_locs[m, :]) ** 2).sum(-1) for m in range(microbe_locs.shape[0])])
-    u = sigmoid((param_dict[seed]['r_bug'][best_mod] - kappa) / net.temp_scheduled)
-    microbe_sum = x @ u
+    out = out_vec[best_mod].detach().numpy()
+    microbe_sum = x.detach().numpy() @ net.u.detach().numpy()
     fig, ax = plt.subplots(out.shape[1], 1, figsize = (8,8*out.shape[1]))
+    ranges = [[np.max(microbe_sum[:,i]/out[:,j]) - np.min(microbe_sum[:,i]/out[:,j]) for i in range(out.shape[1])] for j in range(out.shape[1])]
+    ixs = [np.argmin(r) for r in ranges]
     for i in range(out.shape[1]):
-        ax[i].scatter(microbe_sum[:,i], out[:,i].detach().numpy())
+        ax[i].scatter(microbe_sum[:,ixs[i]], out[:,i])
         ax[i].set_xlabel('Microbe sum')
         ax[i].set_ylabel('y')
         ax[i].set_title('Cluster ' + str(i))
