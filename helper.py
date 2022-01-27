@@ -23,6 +23,23 @@ from torch.distributions.normal import Normal
 import torch.nn as nn
 import time
 
+def unmix_clusters(mu,pred_mu,pred_r,locs):
+    n_clusters = mu.shape[0]
+    mapping = {}
+    for cluster in range(n_clusters):
+        closest_loc = np.argmin(np.sum((locs - mu[cluster,:])**2,1))
+        dists = np.sum(np.sqrt((locs[closest_loc,:] - pred_mu)**2),1)
+        new = np.argmin(dists)
+        all_dists = np.mean((locs - pred_mu[new,:])**2,1)
+        if (all_dists > pred_r[new]).all():
+            continue
+        if new not in mapping.values():
+            mapping[cluster] = new
+    unassigned = (set(range(n_clusters)) - set(mapping.keys())), set(range(n_clusters)) - set(mapping.values())
+    for k, v in zip(*unassigned):
+        mapping[k] = v
+    return mapping
+
 def smoothmax(x, tau = 1):
     return torch.sum(x*torch.exp(x/tau))/torch.sum(torch.exp(x/tau))
 

@@ -3,9 +3,9 @@ from sklearn.manifold import MDS
 from sklearn.cluster import KMeans
 from plot_helper import *
 
-def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clusters = 2, N_bug_clusters = 2, N_local_clusters=4, state = 1,
+def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clusters = 2, N_bug_clusters = 2, N_local_clusters=1, state = 1,
                             beta_var = 2, cluster_disparity = 100, meas_var = 0.001,
-                            cluster_per_met_cluster = 1, repeat_clusters = True, deterministic = True):
+                            cluster_per_met_cluster = 0, repeat_clusters = True, deterministic = True):
     np.random.seed(state)
     choose_from = np.arange(N_met)
     met_gp_ids = []
@@ -113,7 +113,9 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
         vals = [-2.2,3.1,-5.4,4.3,-1.5,2.7,-3.3,0.8,-5.9,4.9]
         betas[1:,:] = np.diag(vals)
         betas = betas[:N_bug_clusters+1, :N_met_clusters]
+        betas[-1,0] = 15
         alphas = np.ones((N_bug_clusters, N_met_clusters))
+        alphas[-1,0] = 0
         # cluster_starts = np.arange(200,200+(100*10) + 20, 200)
         # cluster_ends = np.arange(300,300+(100*10) + 20, 200)
         cluster_starts = [100,350,510,650,870,1000,1200,1400,1600,1800]
@@ -147,6 +149,7 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
     for j in range(N_met):
         k = np.argmax(z_gen[j,:])
         y[:, j] = np.random.normal(betas[0,k] + g@(betas[1:,k]*alphas[:,k]), meas_var)
+
     return X, y, betas, alphas, w_gen, z_gen, bug_locs, met_locs, mu_bug, mu_met, r_bug, r_met, temp
 
 
