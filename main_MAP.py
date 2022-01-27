@@ -142,6 +142,7 @@ class Model(nn.Module):
             self.e_met = nn.Parameter(torch.log(self.initializations['pi_met'].unsqueeze(0)), requires_grad=True)
             self.pi_met = nn.Parameter(Dirichlet(self.initializations['pi_met'].unsqueeze(0)).sample(), requires_grad=True)
         else:
+            self.e_met = torch.log(self.initializations['pi_met'].unsqueeze(0))
             self.pi_met = nn.Parameter(self.initializations['pi_met'].unsqueeze(0), requires_grad=True)
         self.r_met = nn.Parameter(torch.log(r_temp), requires_grad = True)
 
@@ -262,6 +263,7 @@ if __name__ == "__main__":
                  'pi_bug':np.expand_dims(np.sum(gen_w,0)/np.sum(np.sum(gen_w)),0), 'bug_locs': gen_bug_locs, 'met_locs':gen_met_locs,
                  'e_met': np.expand_dims(np.sum(gen_z,0)/np.sum(np.sum(gen_z)),0)}
 
+    print(priors2set)
     net = Model(gen_met_locs, gen_bug_locs, K=args.K, L=args.L,
                 tau_transformer=temp_transformer, meas_var = args.prior_meas_var, compute_loss_for=priors2set,
                 learn_num_bug_clusters=args.lb,
@@ -426,28 +428,28 @@ if __name__ == "__main__":
             fig3.savefig(path_orig + 'loss_seed_' + str(args.seed) + '.pdf')
             plt.close(fig3)
 
-            fig3, ax3 = plt.subplots(len(net.MAPloss.loss_dict.keys()
-                                         ), 1, figsize=(8, 8 * len(net.MAPloss.loss_dict.keys())))
-            it = 0
-            for key, loss_val in net.MAPloss.loss_dict.items():
-                vals = [ldv[key].item() for ldv in loss_dict_vec]
-                ax3[it].plot(range(start, epoch + 1), vals)
-                ax3[it].set_title(key)
-                ax3[it].set_xlabel('Epochs')
-                ax3[it].set_ylabel('Loss')
-                it += 1
-            fig3.tight_layout()
-            fig3.savefig(path_orig + 'lossdict_seed_' + str(args.seed) + '.pdf')
-            plt.close(fig3)
+            # fig3, ax3 = plt.subplots(len(net.MAPloss.loss_dict.keys()
+            #                              ), 1, figsize=(8, 8 * len(net.MAPloss.loss_dict.keys())))
+            # it = 0
+            # for key, loss_val in net.MAPloss.loss_dict.items():
+            #     vals = [ldv[key].item() for ldv in loss_dict_vec]
+            #     ax3[it].plot(range(start, epoch + 1), vals)
+            #     ax3[it].set_title(key)
+            #     ax3[it].set_xlabel('Epochs')
+            #     ax3[it].set_ylabel('Loss')
+            #     it += 1
+            # fig3.tight_layout()
+            # fig3.savefig(path_orig + 'lossdict_seed_' + str(args.seed) + '.pdf')
+            # plt.close(fig3)
 
             plot_output_locations(path, net, last_mod, param_dict[args.seed], args.seed, gen_u, mapping, type='last_train')
             plot_output(path, path_orig, last_mod, train_out_vec, y, gen_z, param_dict[args.seed],
                                  args.seed, mapping, type = 'last_train')
 
             if 'beta' not in params2learn:
-                mapping['met'] = {i:i for i in range(net.z.shape[1])}
+                mapping['met'] = {i:i for i in np.arange(net.z.shape[1])}
                 mapping['met'] = pd.Series(mapping['met']).sort_index()
-                mapping['bug'] = {i:i for i in range(net.w.shape[1])}
+                mapping['bug'] = {i:i for i in np.arange(net.w.shape[1])}
                 mapping['bug'] = pd.Series(mapping['bug']).sort_index()
             plot_xvy(path, net, x, train_out_vec, last_mod, param_dict, gen_bug_locs, args.seed, mapping)
 
@@ -455,7 +457,7 @@ if __name__ == "__main__":
             #     plot_rules_detectors_tree(path, net, last_mod, param_dict[args.seed], gen_bug_locs, args.seed)
             if isinstance(temp_scheduled, str) and len(tau_vec) > 0:
                 fig, ax = plt.subplots()
-                ax.semilogy(range(start, epoch+1), tau_vec)
+                ax.semilogy(np.arange(start, epoch+1), tau_vec)
                 fig.savefig(path + 'seed' + str(args.seed) + '_tau_scheduler.pdf')
                 plt.close(fig)
 
