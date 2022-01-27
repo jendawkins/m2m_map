@@ -64,8 +64,8 @@ parser.add_argument("-case", "--case", help="case", type=str)
 parser.add_argument("-iter", "--iter", help="iter", type=int)
 args = parser.parse_args()
 
-N_met = 25
-N_bug = 25
+N_met = 20
+N_bug = 20
 learn = 'all'
 pid_list = []
 meas_var = 0.01
