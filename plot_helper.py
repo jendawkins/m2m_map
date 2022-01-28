@@ -173,7 +173,7 @@ def plot_param_traces(path, param_dict, params2learn, true_vals, net, fold, mapp
                         if 'beta' in name or 'alpha' in name:
                             if k > 0 and 'beta' in name:
                                 new_k = mapping['bug'][k-1]
-                            else:
+                            elif 'alpha' in name:
                                 new_k = mapping['bug'][k]
                             new_j = mapping['met'][j]
                         elif 'mu' in name:

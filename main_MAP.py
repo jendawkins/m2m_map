@@ -56,6 +56,17 @@ class Model(nn.Module):
             self.L = microbe_locs.shape[0] - 1
             self.L_sm = L
 
+        if not self.linear:
+            self.NAM = [[nn.Sequential(
+                nn.Linear(1, 32),
+                nn.ReLU(),
+                nn.Linear(32, 32),
+                nn.ReLU(),
+                nn.Linear(32, 16),
+                nn.ReLU(),
+                nn.Linear(16,1)
+            ) for l in np.arange(self.L)] for k in np.arange(self.K)]
+
         self.alpha_loc = 1/(self.L_sm*self.K_sm)
         range = np.array([np.max(self.met_locs[:, d]) - np.min(self.met_locs[:, d]) for d in np.arange(self.met_locs.shape[1])])
         self.r_scale_met = np.sqrt(np.sum(range**2)) / (self.K_sm * 2)
@@ -100,7 +111,7 @@ class Model(nn.Module):
         self.range_dict['w'] = (-0.1,1.1)
         self.range_dict['z'] = (-0.1,1.1)
         self.range_dict['alpha'] = (-0.1, 1.1)
-        self.range_dict['u'] = (-0.1,1.1)
+        self.range_dict['beta[1:,:]*alpha'] = self.range_dict['beta']
         self.initialize(self.seed)
 
 
@@ -167,7 +178,11 @@ class Model(nn.Module):
         self.alpha_act = (1-2*epsilon)*torch.sigmoid(self.alpha/self.tau_transformer) + epsilon
         self.z_act = (1-2*epsilon)*torch.softmax(self.z / self.tau_transformer, 1) + epsilon
 
-        out_clusters = self.beta[0,:] + torch.matmul(g, self.beta[1:,:]*self.alpha_act)
+        if self.linear:
+            out_clusters = self.beta[0,:] + torch.matmul(g, self.beta[1:,:]*self.alpha_act)
+        else:
+            out_clusters = self.beta[0,:] + torch.cat([torch.cat([self.alpha_act[l,k]*self.NAM[l][k](g[:,l:l+1])
+                                                  for l in np.arange(self.L)],1).sum(1).unsqueeze(1) for k in np.arange(self.K)],1)
         net.meas_var = np.var(out_clusters.detach().numpy().flatten()/10)
         loss = self.MAPloss.compute_loss(out_clusters,y)
         return out_clusters, loss
@@ -177,7 +192,7 @@ if __name__ == "__main__":
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     parser = argparse.ArgumentParser()
     parser.add_argument("-learn", "--learn", help="params to learn", type=str, nargs='+', default = 'all')
-    parser.add_argument("-lr", "--lr", help="params to learn", type=float, default = 0.01)
+    parser.add_argument("-lr", "--lr", help="params to learn", type=float, default = 0.001)
     parser.add_argument("-fix", "--fix", help="params to fix", type=str, nargs='+')
     parser.add_argument("-priors", "--priors", help="priors to set", type=str, nargs='+', default = 'all')
     parser.add_argument("-case", "--case", help="case", type=str, default = datetime.date.today().strftime('%m %d %Y').replace(' ','-'))
@@ -188,14 +203,15 @@ if __name__ == "__main__":
     parser.add_argument("-N_nuisance", "--N_nuisance", help="N_nuisance", type=int, default = 0)
     parser.add_argument("-meas_var", "--meas_var", help="measurment variance", type=float, default = 0.01)
     parser.add_argument("-prior_meas_var", "--prior_meas_var", help = "prior measurment variance", type = float, default = 1e6)
-    parser.add_argument("-iterations", "--iterations", help="number of iterations", type=int,default = 20000)
-    parser.add_argument("-seed", "--seed", help = "seed for random start", type = int, default = 0)
-    parser.add_argument("-load", "--load", help="0 to not load model, 1 to load model", type=int, default = 1)
+    parser.add_argument("-iterations", "--iterations", help="number of iterations", type=int,default = 20001)
+    parser.add_argument("-seed", "--seed", help = "seed for random start", type = int, default = 5)
+    parser.add_argument("-load", "--load", help="0 to not load model, 1 to load model", type=int, default = 0)
     parser.add_argument("-rep_clust", "--rep_clust", help = "whether or not bugs are in more than one cluster", default = 0)
-    parser.add_argument("-lbc", "--lb", help = "whether or not to learn bug clusters", type = int, default = 0)
+    parser.add_argument("-lb", "--lb", help = "whether or not to learn bug clusters", type = int, default = 0)
     parser.add_argument("-lm", "--lm", help = "whether or not to learn metab clusters", type = int, default = 0)
     parser.add_argument("-N_samples", "--N_samples", help="num of samples", type=int,
                         default=1000)
+    parser.add_argument("-linear", "--linear", type = int, default = 1)
     args = parser.parse_args()
 
     if 'none' in args.priors:
@@ -216,7 +232,7 @@ if __name__ == "__main__":
         if not os.path.isdir(path):
             os.mkdir(path)
 
-    info = 'lr' + str(args.lr).replace('.', '_') + '-N_bug' + str(args.N_bug) + \
+    info = 'lr' + str(args.lr) + '-linear' + str(args.linear) + '-lm' + str(args.lm) + '-lb' + str(args.lb) +'-N_bug' + str(args.N_bug) + \
            '-N_met' + str(args.N_met) + '-L' + str(args.L) + '-K' + str(args.K)
     path = path + '/' + info +'/'
 
@@ -239,7 +255,7 @@ if __name__ == "__main__":
     mu_met, r_bug, r_met, gen_u = generate_synthetic_data(
         N_met = args.N_met, N_bug = args.N_bug, N_met_clusters = args.K,
         N_bug_clusters = args.L,meas_var = args.meas_var,
-        repeat_clusters= args.rep_clust, N_samples=args.N_samples)
+        repeat_clusters= args.rep_clust, N_samples=args.N_samples, linear = args.linear)
     plot_syn_data(path, x, y, gen_z, gen_bug_locs, gen_met_locs, mu_bug,
                   r_bug, mu_met, r_met, gen_u)
 
@@ -258,7 +274,7 @@ if __name__ == "__main__":
         gen_alpha = np.vstack((gen_alpha, np.zeros((args.N_bug - args.L - 1, gen_alpha.shape[1]))))
 
     true_vals = {'y':y, 'beta':gen_beta, 'alpha':gen_alpha, 'mu_bug': mu_bug,
-                 'mu_met': mu_met, 'u': gen_u,
+                 'mu_met': mu_met, 'u': gen_u, 'beta[1:,:]*alpha': gen_beta[1:,:]*gen_alpha,
                  'r_bug': r_bug, 'r_met': r_met, 'z': gen_z, 'w': gen_w, 'pi_met':np.expand_dims(np.sum(gen_z,0)/np.sum(np.sum(gen_z)),0),
                  'pi_bug':np.expand_dims(np.sum(gen_w,0)/np.sum(np.sum(gen_w)),0), 'bug_locs': gen_bug_locs, 'met_locs':gen_met_locs,
                  'e_met': np.expand_dims(np.sum(gen_z,0)/np.sum(np.sum(gen_z)),0)}
@@ -267,7 +283,7 @@ if __name__ == "__main__":
     net = Model(gen_met_locs, gen_bug_locs, K=args.K, L=args.L,
                 tau_transformer=temp_transformer, meas_var = args.prior_meas_var, compute_loss_for=priors2set,
                 learn_num_bug_clusters=args.lb,
-                learn_num_met_clusters=args.lm)
+                learn_num_met_clusters=args.lm, linear = args.linear==1)
     net.to(device)
 
     for param, dist in net.distributions.items():
@@ -301,6 +317,7 @@ if __name__ == "__main__":
         range = np.abs(net.range_dict[name][-1] - net.range_dict[name][0])
         lr_list.append({'params': parameter, 'lr': (args.lr/beta_range)*range})
     param_dict[args.seed]['w'] = [net.w.clone().detach().numpy()]
+    param_dict[args.seed]['beta[1:,:]*alpha'] = [net.beta[1:,:].clone().detach().numpy()*net.alpha.clone().detach().numpy()]
     loss_vec = []
     train_out_vec = []
 
@@ -388,6 +405,9 @@ if __name__ == "__main__":
                 parameter = torch.softmax(parameter, 1)
             param_dict[args.seed][name].append(parameter.clone().detach().numpy())
         param_dict[args.seed]['w'].append(net.w.clone().detach().numpy())
+        param_dict[args.seed]['beta[1:,:]*alpha'].append(
+            net.beta[1:, :].clone().detach().numpy() * net.alpha.clone().detach().numpy())
+
 
         if (epoch%1000 == 0 and epoch != 0):
             print('Epoch ' + str(epoch) + ' Loss: ' + str(loss_vec[-1]))
