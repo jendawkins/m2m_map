@@ -1,6 +1,6 @@
 import subprocess
 from main_MAPv0 import *
-max_load = 20
+max_load = 5
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-case", "--case", help="case", type=str)
@@ -10,9 +10,10 @@ args = parser.parse_args()
 # local = 1
 # learn_num_clusters = 1
 # learn_list = ['beta','alpha',('r_met', 'mu_met', 'z'),('r_bug','mu_bug'),('pi_met','z')]
-learn_list = ['beta']
-param_dict = {'N_met': 10, 'N_bug': 10, ('L', 'K'): [(2,2),(4,4)], 'seed': 3,
-              ('learn', 'priors'): list(zip(*[learn_list, learn_list])), 'lr': np.logspace(-1,-5,5), 'iter': 20000}
+learn_list = [('beta','alpha','r_met','mu_met','z','pi_met','e_met'),('beta','alpha','r_met','mu_met','z','pi_met','e_met')]
+priors_list = [('beta','alpha','r_met','mu_met','z','pi_met','e_met'),('beta','alpha','r_met','mu_met','z','pi_met')]
+param_dict = {'N_met': 10, 'N_bug': 10, ('L', 'K'): [(2,2),(3,3)], 'seed': [0], 'hyper_mu': [0,1], 'hyper_r': [0,1],
+              ('learn', 'priors'): list(zip(*[learn_list, priors_list])), 'lr': [0.01], 'iter': 20001, 'load': 1}
 
 total_iters = np.prod([len(v) for v in param_dict.values() if hasattr(v, '__len__')])
 
@@ -20,13 +21,6 @@ i = 0
 list_keys = []
 list_vals = []
 for key, value in param_dict.items():
-    # if isinstance(key, tuple):
-    #     for k in key:
-    #         my_str = my_str + ' -' + k + ' {' + str(i) + '}'
-    #         i += 1
-    # else:
-    #     my_str = my_str + ' -' + key + ' {' + str(i) + '}'
-    #     i += 1
     list_keys.append(key)
     if hasattr(value, "__len__"):
         list_vals.append(value)

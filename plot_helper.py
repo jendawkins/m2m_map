@@ -152,11 +152,11 @@ def plot_param_traces(path, param_dict, params2learn, true_vals, net, fold, mapp
                                                              figsize = (5*nn, 4*n))
             for k in range(n):
                 if len(plist[0].squeeze().shape) == 1:
-                    if 'r_bug' or 'r_met' or 'pi_met' or 'e_met' in name:
+                    if name == 'r_bug' or name == 'r_met' or name == 'pi_met' or name == 'e_met':
                         nm = name.split('_')[-1]
                         trace = [p.squeeze()[mapping[nm]][k] for p in plist]
                     else:
-                        trace = [p.squeeze()[mapping[nm]][k] for p in plist]
+                        trace = [p.squeeze()[mapping['bug']][k] for p in plist]
                     ax_dict[name][k].plot(trace, label='Trace')
                     if not isinstance(true_vals[name], list):
                         true_vals[name] = true_vals[name].squeeze()
@@ -173,7 +173,7 @@ def plot_param_traces(path, param_dict, params2learn, true_vals, net, fold, mapp
                         if 'beta' in name or 'alpha' in name:
                             if k > 0 and 'beta' in name:
                                 new_k = mapping['bug'][k-1]
-                            elif 'alpha' in name:
+                            if 'alpha' in name:
                                 new_k = mapping['bug'][k]
                             new_j = mapping['met'][j]
                         elif 'mu' in name:
@@ -196,7 +196,7 @@ def plot_param_traces(path, param_dict, params2learn, true_vals, net, fold, mapp
                         ax_dict[name][k, j].set_xlabel('Iterations')
                         ax_dict[name][k, j].set_ylabel('Parameter Values')
             fig_dict[name].tight_layout()
-            fig_dict[name].savefig(path + 'fold' + str(fold) + '_' + name + '_parameter_trace.pdf')
+            fig_dict[name].savefig(path + 'seed' + str(fold) + '_' + name + '_parameter_trace.pdf')
             plt.close(fig_dict[name])
 
 def plot_output_locations(path, net, best_mod, param_dict, fold, gen_w, mapping, type = 'best'):
@@ -223,7 +223,7 @@ def plot_output_locations(path, net, best_mod, param_dict, fold, gen_w, mapping,
         ax.set_aspect('equal')
 
     fig.tight_layout()
-    fig.savefig(path + 'fold' + str(fold) + '-' + type + '-bug_clusters.pdf')
+    fig.savefig(path + 'seed' + str(fold) + '-' + type + '-bug_clusters.pdf')
     plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(5, 5))
@@ -246,14 +246,14 @@ def plot_output_locations(path, net, best_mod, param_dict, fold, gen_w, mapping,
         ax.set_aspect('equal')
 
     fig.tight_layout()
-    fig.savefig(path + 'fold' + str(fold) + '-' + type + '-predicted_metab_clusters.pdf')
+    fig.savefig(path + 'seed' + str(fold) + '-' + type + '-predicted_metab_clusters.pdf')
     plt.close(fig)
 
 def plot_xvy(path, net, x, out_vec, best_mod, param_dict, microbe_locs, seed, mapping):
     out = out_vec[best_mod].detach().numpy()
-    out = out[:, mapping['met']]
+    # out = out[:, mapping['met']]
     microbe_sum = x.detach().numpy() @ net.w.detach().numpy()
-    microbe_sum = microbe_sum[:, mapping['bug']]
+    # microbe_sum = microbe_sum[:, mapping['bug']]
     fig, ax = plt.subplots(out.shape[1], microbe_sum.shape[1], figsize = (8*microbe_sum.shape[1],8*out.shape[1]))
     # ranges = [[np.max(microbe_sum[:,i]/out[:,j]) - np.min(microbe_sum[:,i]/out[:,j]) for i in range(out.shape[1])] for j in range(out.shape[1])]
     # ixs = [np.argmin(r) for r in ranges]
@@ -265,7 +265,7 @@ def plot_xvy(path, net, x, out_vec, best_mod, param_dict, microbe_locs, seed, ma
             ax[i,j].set_ylabel(r'$y_{i}$ when $i=$' + str(i))
             ax[i,j].set_title('Metabolite Cluster ' + str(i) + ' vs Microbe Cluster ' + str(j))
     fig.tight_layout()
-    fig.savefig(path + 'fold' + str(seed) + '-sum_x_v_y.pdf')
+    fig.savefig(path + 'seed' + str(seed) + '-sum_x_v_y.pdf')
     plt.close(fig)
 
 def plot_rules_detectors_tree(path, net, best_mod, param_dict, microbe_locs, seed):
@@ -309,23 +309,33 @@ def plot_output(path, path_orig, best_mod, out_vec, targets, gen_z,  param_dict,
         pairwise_cf = {'Same cluster': {'Predicted Same cluster': tp, 'Predicted Different cluster': fn},
                        'Different cluster':{'Predicted Same cluster': fp, 'Predicted Different cluster': tn}}
         pd.DataFrame(pairwise_cf).T.to_csv(
-            path + 'fold' + str(fold) + '_PairwiseConfusionMetabs_' + type + '_' + str(np.round(ri,3)).replace('.', 'd') + '.csv')
+            path + 'seed' + str(fold) + '_PairwiseConfusionMetabs_' + type + '_' + str(np.round(ri,3)).replace('.', 'd') + '.csv')
         ri = str(np.round(ri, 3))
     except:
         ri = 'NA'
-    if not os.path.isfile(path_orig + 'fold' + str(fold) + '-' + type +'-nmi_ri.txt'):
-        with open(path_orig + 'fold' + str(fold) + '-' + type +'-nmi_ri.txt', 'w') as f:
+    if not os.path.isfile(path_orig + 'seed' + str(fold) + '-' + type +'-nmi_ri.txt'):
+        with open(path_orig + 'seed' + str(fold) + '-' + type +'-nmi_ri.txt', 'w') as f:
             f.write('Epoch ' + str(len(out_vec)) + ': NMI ' + str(nmi) + ', RI ' + ri + '\n')
     else:
-        with open(path_orig + 'fold' + str(fold) + '-' + type +'-nmi_ri.txt', 'a') as f:
+        with open(path_orig + 'seed' + str(fold) + '-' + type +'-nmi_ri.txt', 'a') as f:
             f.write('Epoch ' + str(len(out_vec)) + ': NMI ' + str(nmi) + ', RI ' + ri + '\n')
 
 
     gen_z = gen_z[:, mapping['met']]
 
+    figx, axx = plt.subplots(figsize = (8, 8))
+    color = cm.rainbow(np.linspace(0, 1, gen_z.shape[1]))
+
+    RMSE = np.zeros(gen_z.shape[0])
+    residuals = np.zeros(targets.shape)
+    preds_t = np.zeros(targets.shape)
     for cluster in range(gen_z.shape[1]):
         met_ids = np.where(gen_z[:, cluster] == 1)[0]
         bins = int((total.max() - total.min()) / 5)
+        residuals[:, met_ids] = targets[:, met_ids] - preds[:, met_ids].detach().numpy()
+        preds_t[:, met_ids] = preds[:, met_ids].detach().numpy()
+        for i in range(len(met_ids)):
+            RMSE[met_ids[i]] = np.sqrt(np.sum(((preds[:, met_ids[i]].detach().numpy() - targets[:, met_ids[i]])**2))/preds.shape[0])
         if bins<10:
             bins = 10
         ax_dict3[cluster].hist(preds[:, met_ids].flatten().detach().numpy(), range=(total.min(), total.max()),
@@ -336,12 +346,25 @@ def plot_output(path, path_orig, best_mod, out_vec, targets, gen_z,  param_dict,
         ax_dict3[cluster].legend(loc = 'upper right')
         ax_dict3[cluster].set_xlabel('Metabolite Levels')
         ax_dict3[cluster].set_ylabel('# Metabolites in Cluster x\n# Samples Per Metabolite')
+
+        axx.scatter(preds_t[:, met_ids], residuals[:, met_ids], c=color[cluster],
+                    label='Cluster ' + str(cluster))
     fig_dict3.tight_layout()
-    fig_dict3.savefig(path + 'fold' + str(fold) + '_cluster_histograms_' + type + '.pdf')
+    fig_dict3.savefig(path + 'seed' + str(fold) + '_cluster_histograms_' + type + '.pdf')
     plt.close(fig_dict3)
 
+    RMSE_df = pd.Series(RMSE, index = ['Metabolite ' + str(i) for i in range(len(RMSE))])
+    RMSE_df.to_csv(path + 'seed' + str(fold) + 'RMSE.csv')
+
+    axx.set_title('Residuals plot for metabolite level predictions')
+    axx.set_xlabel('Predicted Levels')
+    axx.set_ylabel('Residuals')
+    axx.legend()
+    figx.savefig(path + 'seed' + str(fold) + '_residuals_' + type + '.pdf')
+    plt.close(figx)
+
 def plot_loss(fig3, ax3, fold, iterations, loss_vec, test_loss=None, lowest_loss = None):
-    ax3.set_title('Fold ' + str(fold))
+    ax3.set_title('Seed ' + str(fold))
     ax3.plot(np.arange(iterations), loss_vec, label='training loss')
     if iterations%100 != 1:
         xvals = np.append(np.arange(0, iterations, 100), iterations)

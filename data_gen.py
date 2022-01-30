@@ -6,7 +6,7 @@ from plot_helper import *
 def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clusters = 2, N_bug_clusters = 2, N_local_clusters=1, state = 1,
                             beta_var = 2, cluster_disparity = 100, meas_var = 0.001,
                             cluster_per_met_cluster = 0, repeat_clusters = True,
-                            deterministic = True, linear = True):
+                            deterministic = True, linear = False, nl_type = "linear"):
     np.random.seed(state)
     choose_from = np.arange(N_met)
     met_gp_ids = []
@@ -149,10 +149,15 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
     y = np.zeros((N_samples, N_met))
     for j in range(N_met):
         k = np.argmax(z_gen[j,:])
-        if linear:
-            y[:, j] = np.random.normal(betas[0,k] + g@(betas[1:,k]*alphas[:,k]), meas_var)
+        if not linear and nl_type != 'linear':
+            if nl_type == 'exp':
+                y[:, j] = np.random.normal(betas[0, k] + np.exp(0.01 * g) @ (betas[1:, k] * alphas[:, k]), meas_var)
+            if nl_type == 'sin':
+                y[:, j] = np.random.normal(betas[0, k] + np.sin(0.1*g) @ (betas[1:, k] * alphas[:, k]), meas_var)
+            else:
+                y[:, j] = np.random.normal(betas[0, k] + g @ (betas[1:, k] * alphas[:, k]), meas_var)
         else:
-            y[:, j] = np.random.normal(betas[0, k] + (g**2) @ (betas[1:, k] * alphas[:, k]), meas_var)
+            y[:, j] = np.random.normal(betas[0,k] + g@(betas[1:,k]*alphas[:,k]), meas_var)
 
     return X, y, betas, alphas, w_gen, z_gen, bug_locs, met_locs, mu_bug, mu_met, r_bug, r_met, temp
 
