@@ -272,19 +272,19 @@ def plot_xvy(path, net, x, out_vec, best_mod, targets, gen_z, mapping, seed):
     out = out[:, mapping['met']]
     microbe_sum = x.detach().numpy() @ net.w.detach().numpy()
     microbe_sum = microbe_sum[:, mapping['bug']]
-    target_sum = targets @ gen_z
+    # target_sum = targets @ gen_z
     # microbe_sum = microbe_sum[:, mapcping['bug']]
     fig, ax = plt.subplots(out.shape[1], microbe_sum.shape[1], figsize = (8*microbe_sum.shape[1],8*out.shape[1]))
     # ranges = [[np.max(microbe_sum[:,i]/out[:,j]) - np.min(microbe_sum[:,i]/out[:,j]) for i in range(out.shape[1])] for j in range(out.shape[1])]
     # ixs = [np.argmin(r) for r in ranges]
     for i in range(out.shape[1]):
         for j in range(microbe_sum.shape[1]):
-            ax[i, j].scatter(microbe_sum[:,j], target_sum[:,i], c = 'r', label = 'True')
+            # ax[i, j].scatter(microbe_sum[:,j], target_sum[:,i], c = 'r', label = 'True')
             ax[i,j].scatter(microbe_sum[:, j], out[:, i], c = 'b')
             ax[i,j].set_xlabel('Microbe sum')
             ax[i,j].set_ylabel(r'$y_{i}$ when $i=$' + str(i))
             ax[i,j].set_title('Metabolite Cluster ' + str(i) + ' vs Microbe Cluster ' + str(j))
-            ax[i,j].legend()
+            # ax[i,j].legend()
     fig.tight_layout()
     fig.savefig(path + 'seed' + str(seed) + '-sum_x_v_y.pdf')
     plt.close(fig)
