@@ -205,10 +205,10 @@ if __name__ == "__main__":
     torch.autograd.set_detect_anomaly(True)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     parser = argparse.ArgumentParser()
-    parser.add_argument("-learn", "--learn", help="params to learn", type=str, nargs='+', default = 'all')
-    parser.add_argument("-lr", "--lr", help="params to learn", type=float, default = 0.01)
+    parser.add_argument("-learn", "--learn", help="params to learn", type=str, nargs='+', default = ['beta'])
+    parser.add_argument("-lr", "--lr", help="params to learn", type=float, default = 0.001)
     parser.add_argument("-fix", "--fix", help="params to fix", type=str, nargs='+')
-    parser.add_argument("-priors", "--priors", help="priors to set", type=str, nargs='+', default = 'all')
+    parser.add_argument("-priors", "--priors", help="priors to set", type=str, nargs='+', default = ['beta'])
     parser.add_argument("-case", "--case", help="case", type=str, default = datetime.date.today().strftime('%m %d %Y').replace(' ','-'))
     parser.add_argument("-N_met", "--N_met", help="N_met", type=int, default = 20)
     parser.add_argument("-N_bug", "--N_bug", help="N_bug", type=int, default = 20)
@@ -229,6 +229,7 @@ if __name__ == "__main__":
     parser.add_argument("-nltype", "--nltype", type = str, default = "linear")
     parser.add_argument("-hyper_r", "--hyper_r", type=int, default=0)
     parser.add_argument("-hyper_mu","--hyper_mu", type = int, default = 0)
+    parser.add_argument("-adjust_lr", "--adjust_lr", type=int, default=0)
     args = parser.parse_args()
 
     if 'none' in args.priors:
@@ -302,7 +303,7 @@ if __name__ == "__main__":
 
     true_vals = {'y':y, 'beta':gen_beta, 'alpha':gen_alpha, 'mu_bug': mu_bug,
                  'mu_met': mu_met, 'u': gen_u,
-                 'r_bug': r_bug, 'r_met': r_met, 'z': gen_z, 'w': gen_w, 'pi_met':np.expand_dims(np.sum(gen_z,0)/np.sum(np.sum(gen_z)),0),
+                 'r_bug': np.log(r_bug), 'r_met': np.log(r_met), 'z': gen_z, 'w': gen_w, 'pi_met':np.expand_dims(np.sum(gen_z,0)/np.sum(np.sum(gen_z)),0),
                  'pi_bug':np.expand_dims(np.sum(gen_w,0)/np.sum(np.sum(gen_w)),0), 'bug_locs': gen_bug_locs, 'met_locs':gen_met_locs,
                  'e_met': np.expand_dims(np.sum(gen_z,0)/np.sum(np.sum(gen_z)),0)}
     if args.linear:
@@ -338,6 +339,8 @@ if __name__ == "__main__":
         if name not in params2learn and 'all' not in params2learn:
             setattr(net, name, nn.Parameter(torch.Tensor(true_vals[name]), requires_grad=False))
             parameter = nn.Parameter(torch.Tensor(true_vals[name]), requires_grad=False)
+            param_dict[args.seed][name] = [parameter.clone().detach().numpy()]
+            continue
         elif name == 'z' or name == 'alpha':
             parameter = getattr(net, name + '_act')
         elif name == 'r_bug' or name == 'r_met' or name == 'e_met':
@@ -347,7 +350,10 @@ if __name__ == "__main__":
         param_dict[args.seed][name] = [parameter.clone().detach().numpy()]
         range = np.abs(net.range_dict[name][-1] - net.range_dict[name][0])
         lr_list.append({'params': parameter, 'lr': (args.lr/beta_range)*range})
-    param_dict[args.seed]['w'] = [net.w.clone().detach().numpy()]
+    if 'w' not in params2learn and 'all' not in params2learn:
+        param_dict[args.seed]['w'] = [true_vals['w']]
+    else:
+        param_dict[args.seed]['w'] = [net.w.clone().detach().numpy()]
     if net.linear:
         param_dict[args.seed]['beta[1:,:]*alpha'] = [net.beta[1:,:].clone().detach().numpy()*net.alpha_act.clone().detach().numpy()]
     loss_vec = []
@@ -412,17 +418,18 @@ if __name__ == "__main__":
         loss_dict_vec.append(copy.copy(net.MAPloss.loss_dict))
         loss.backward()
 
-        if epoch == start and args.learn[0]!='':
-            lr_list = []
-            if net.beta.grad is not None:
-                beta_range = np.abs(np.max(net.beta.grad.view(-1).numpy()) - np.min(net.beta.grad.view(-1).numpy()))
-            else:
-                beta_range = 4
-            for name, parameter in net.named_parameters():
-                if parameter.grad is not None:
-                    range = np.abs(np.max(parameter.grad.view(-1).numpy()) - np.min(parameter.grad.view(-1).numpy()))
-                    lr_list.append({'params': parameter, 'lr': (args.lr / beta_range) * range})
-            optimizer = optim.RMSprop(lr_list, lr=args.lr)
+        if args.adjust_lr:
+            if epoch == start and args.learn[0]!='':
+                lr_list = []
+                if net.beta.grad is not None:
+                    beta_range = np.abs(np.max(net.beta.grad.view(-1).numpy()) - np.min(net.beta.grad.view(-1).numpy()))
+                else:
+                    beta_range = 4
+                for name, parameter in net.named_parameters():
+                    if parameter.grad is not None:
+                        range = np.abs(np.max(parameter.grad.view(-1).numpy()) - np.min(parameter.grad.view(-1).numpy()))
+                        lr_list.append({'params': parameter, 'lr': (args.lr / beta_range) * range})
+                optimizer = optim.RMSprop(lr_list, lr=args.lr)
 
         optimizer.step()
 
@@ -430,14 +437,20 @@ if __name__ == "__main__":
         for name, parameter in net.named_parameters():
             if 'NAM' in name or 'lambda_mu' in name or name=='b' or name == 'C':
                 continue
-            if name == 'z' or name == 'alpha':
+            if name not in params2learn and 'all' not in params2learn:
+                param_dict[args.seed][name].append(parameter.clone().detach().numpy())
+                continue
+            elif name == 'z' or name == 'alpha':
                 parameter = getattr(net, name + '_act')
             elif name == 'r_bug' or name == 'r_met' or name == 'e_met':
                 parameter = torch.exp(parameter)
             elif name == 'pi_met':
                 parameter = torch.softmax(parameter, 1)
             param_dict[args.seed][name].append(parameter.clone().detach().numpy())
-        param_dict[args.seed]['w'].append(net.w.clone().detach().numpy())
+        if 'w' not in params2learn or 'all' not in params2learn:
+            param_dict[args.seed]['w'].append(true_vals['w'])
+        else:
+            param_dict[args.seed]['w'].append(net.w.clone().detach().numpy())
         if net.linear:
             param_dict[args.seed]['beta[1:,:]*alpha'].append(
                 net.beta[1:, :].clone().detach().numpy() * net.alpha_act.clone().detach().numpy())

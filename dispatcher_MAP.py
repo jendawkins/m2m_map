@@ -73,13 +73,13 @@ learn_list = [('beta','alpha','r_met','mu_met','z','pi_met','e_met'),('beta','al
 priors_list = [('beta','alpha','r_met','mu_met','z','pi_met','e_met'),('beta','alpha','r_met','mu_met','z','pi_met')]
 param_dict1 = {'N_met': 20, 'N_bug': 20, ('L', 'K'): [(2,2),(3,3)], 'seed': [0,1,2], 'hyper_mu': [0,1], 'hyper_r': [0,1],
               ('learn', 'priors'): list(zip(*[learn_list, priors_list])), 'lr': 0.01, 'iter': 20001, 'load': 1, 'lm': 1,
-               'linear': 1}
+               'linear': 1, 'adjust_lr': [0,1]}
 
 learn_list = ['', 'all']
 priors_list = ['', 'all']
 param_dict2 = {'N_met': 20, 'N_bug': 20, ('L', 'K'): [(2,2)], 'seed': [0,1,2], 'linear': 0,
               ('learn', 'priors'): list(zip(*[learn_list, priors_list])), 'lr': 0.01, 'iter': 20001, 'load': 1, 'lm': 0,
-               'nltype': ['linear', 'sin', 'exp']}
+               'nltype': ['linear', 'sin', 'exp'], 'adjust_lr': [0,1]}
 
 for param_dict in [param_dict1, param_dict2]:
     total_iters = np.prod([len(v) for v in param_dict.values() if hasattr(v, '__len__')])
