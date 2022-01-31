@@ -273,7 +273,7 @@ def plot_xvy(path, net, x, out_vec, best_mod, targets, gen_z, mapping, seed):
     microbe_sum = x.detach().numpy() @ net.w.detach().numpy()
     microbe_sum = microbe_sum[:, mapping['bug']]
     target_sum = targets @ gen_z
-    # microbe_sum = microbe_sum[:, mapping['bug']]
+    # microbe_sum = microbe_sum[:, mapcping['bug']]
     fig, ax = plt.subplots(out.shape[1], microbe_sum.shape[1], figsize = (8*microbe_sum.shape[1],8*out.shape[1]))
     # ranges = [[np.max(microbe_sum[:,i]/out[:,j]) - np.min(microbe_sum[:,i]/out[:,j]) for i in range(out.shape[1])] for j in range(out.shape[1])]
     # ixs = [np.argmin(r) for r in ranges]

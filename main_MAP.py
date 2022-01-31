@@ -505,7 +505,7 @@ if __name__ == "__main__":
                 mapping['met'] = pd.Series(mapping['met']).sort_index()
                 mapping['bug'] = {i:i for i in np.arange(net.w.shape[1])}
                 mapping['bug'] = pd.Series(mapping['bug']).sort_index()
-            plot_xvy(path, net, x, train_out_vec, last_mod, gen_bug_locs, y, gen_z, mapping, args.seed)
+            plot_xvy(path, net, x, train_out_vec, last_mod, y, gen_z, mapping, args.seed)
 
             # if args.n_local_clusters > 1:
             #     plot_rules_detectors_tree(path, net, last_mod, param_dict[args.seed], gen_bug_locs, args.seed)
