@@ -119,8 +119,8 @@ for param_dict in [param_dict1, param_dict2]:
         if args.iter:
             my_str = my_str + '-iter ' + args.iter
         cmd = my_str
-        print(cmd)
-        print(my_str_orig + my_str)
+        # print(cmd)
+        # print(my_str_orig + my_str)
         f = open('m2m.lsf', 'w')
         f.write(my_str_orig + my_str)
         f.close()

@@ -2,6 +2,8 @@ from helper import *
 from sklearn.manifold import MDS
 from sklearn.cluster import KMeans
 from plot_helper import *
+import datetime
+
 
 def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clusters = 2, N_bug_clusters = 2, N_local_clusters=1, state = 1,
                             beta_var = 2, cluster_disparity = 100, meas_var = 0.001,
@@ -165,34 +167,36 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
 if __name__ == "__main__":
     N_bug = 20
     N_met = 20
-    K=3
-    L=3
+    K=2
+    L=2
     n_local_clusters = 1
     cluster_per_met_cluster = 0
     meas_var = 0.001
-    path = 'debug/'
+    path = datetime.date.today().strftime('%m %d %Y').replace(' ','-') + '/'
     if not os.path.isdir(path):
         os.mkdir(path)
     repeat_clusters = 0
 
-    x, y, gen_beta, gen_alpha, gen_w, gen_z, gen_bug_locs, gen_met_locs, mu_bug, \
-    mu_met, r_bug, r_met, gen_u = generate_synthetic_data(
-        N_met = N_met, N_bug = N_bug, N_met_clusters = K, N_local_clusters = n_local_clusters, N_bug_clusters = L,
-        meas_var = meas_var, cluster_per_met_cluster= cluster_per_met_cluster, repeat_clusters=repeat_clusters,
-    N_samples=1000)
 
-    range_x = np.max(gen_met_locs[:, 0]) - np.min(gen_met_locs[:, 0])
-    range_y = np.max(gen_met_locs[:, 1]) - np.min(gen_met_locs[:, 1])
-    r_scale_met = np.sqrt(range_x ** 2 + range_y ** 2) / (K * 2)
+    for type in ['linear', 'sin', 'exp']:
+        x, y, gen_beta, gen_alpha, gen_w, gen_z, gen_bug_locs, gen_met_locs, mu_bug, \
+        mu_met, r_bug, r_met, gen_u = generate_synthetic_data(
+            N_met=N_met, N_bug=N_bug, N_met_clusters=K, N_local_clusters=n_local_clusters, N_bug_clusters=L,
+            meas_var=meas_var, repeat_clusters=False,
+            N_samples=1000,deterministic = True, linear = False, nl_type = type)
 
-    bug_clusters = np.argmax(gen_w, 1)
-    met_clusters = np.argmax(gen_z, 1)
-
-    div = y[:, met_clusters==1]/y[:, met_clusters==0]
-    print((div.min(), div.max()))
-
-    div = x[:, bug_clusters==1]/x[:, bug_clusters==0]
-    print((div.min(), div.max()))
-
-    plot_syn_data(path, x, y, gen_z, gen_bug_locs, gen_met_locs, mu_bug,
-                  r_bug, mu_met, r_met, gen_u)
+        fig, ax = plt.subplots(K, L, figsize=(8 * L, 8 * K))
+        # ranges = [[np.max(microbe_sum[:,i]/out[:,j]) - np.min(microbe_sum[:,i]/out[:,j]) for i in range(out.shape[1])] for j in range(out.shape[1])]
+        # ixs = [np.argmin(r) for r in ranges]
+        g = x@gen_w
+        msum = y@gen_z
+        for i in range(K):
+            for j in range(L):
+                # ax[i].scatter(microbe_sum[:,ixs[i]], out[:,i])
+                ax[i, j].scatter(msum[:, j], g[:, i])
+                ax[i, j].set_xlabel('Microbe sum')
+                ax[i, j].set_ylabel(r'$y_{i}$ when $i=$' + str(i))
+                ax[i, j].set_title('Metabolite Cluster ' + str(i) + ' vs Microbe Cluster ' + str(j))
+        fig.tight_layout()
+        fig.savefig(path + type +  '-sum_x_v_y.pdf')
+        plt.close(fig)

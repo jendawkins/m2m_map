@@ -91,6 +91,24 @@ def plot_syn_data(path, x, y, gen_z, gen_bug_locs, gen_met_locs,
     plt.close(fig)
     plt.close(fig2)
 
+    K = gen_z.shape[1]
+    L = gen_u.shape[1]
+    fig, ax = plt.subplots(K, L, figsize=(8 * L, 8 * K))
+    # ranges = [[np.max(microbe_sum[:,i]/out[:,j]) - np.min(microbe_sum[:,i]/out[:,j]) for i in range(out.shape[1])] for j in range(out.shape[1])]
+    # ixs = [np.argmin(r) for r in ranges]
+    g = x @ gen_u
+    msum = y @ gen_z
+    for i in range(K):
+        for j in range(L):
+            # ax[i].scatter(microbe_sum[:,ixs[i]], out[:,i])
+            ax[i, j].scatter(msum[:, j], g[:, i])
+            ax[i, j].set_xlabel('Microbe sum')
+            ax[i, j].set_ylabel(r'$y_{i}$ when $i=$' + str(i))
+            ax[i, j].set_title('Metabolite Cluster ' + str(i) + ' vs Microbe Cluster ' + str(j))
+    fig.tight_layout()
+    fig.savefig(path + '-sum_x_v_y.pdf')
+    plt.close(fig)
+
 def plot_distribution(dist, param, true_val = None, ptype = 'init', path = '', **kwargs):
     if ptype == 'init':
         label = 'Initialized values'
@@ -249,21 +267,24 @@ def plot_output_locations(path, net, best_mod, param_dict, fold, gen_w, mapping,
     fig.savefig(path + 'seed' + str(fold) + '-' + type + '-predicted_metab_clusters.pdf')
     plt.close(fig)
 
-def plot_xvy(path, net, x, out_vec, best_mod, param_dict, microbe_locs, seed, mapping):
+def plot_xvy(path, net, x, out_vec, best_mod, targets, gen_z, mapping, seed):
     out = out_vec[best_mod].detach().numpy()
-    # out = out[:, mapping['met']]
+    out = out[:, mapping['met']]
     microbe_sum = x.detach().numpy() @ net.w.detach().numpy()
+    microbe_sum = microbe_sum[:, mapping['bug']]
+    target_sum = targets @ gen_z
     # microbe_sum = microbe_sum[:, mapping['bug']]
     fig, ax = plt.subplots(out.shape[1], microbe_sum.shape[1], figsize = (8*microbe_sum.shape[1],8*out.shape[1]))
     # ranges = [[np.max(microbe_sum[:,i]/out[:,j]) - np.min(microbe_sum[:,i]/out[:,j]) for i in range(out.shape[1])] for j in range(out.shape[1])]
     # ixs = [np.argmin(r) for r in ranges]
     for i in range(out.shape[1]):
         for j in range(microbe_sum.shape[1]):
-            # ax[i].scatter(microbe_sum[:,ixs[i]], out[:,i])
-            ax[i,j].scatter(microbe_sum[:, j], out[:, i])
+            ax[i, j].scatter(microbe_sum[:,j], target_sum[:,i], c = 'r', label = 'True')
+            ax[i,j].scatter(microbe_sum[:, j], out[:, i], c = 'b')
             ax[i,j].set_xlabel('Microbe sum')
             ax[i,j].set_ylabel(r'$y_{i}$ when $i=$' + str(i))
             ax[i,j].set_title('Metabolite Cluster ' + str(i) + ' vs Microbe Cluster ' + str(j))
+            ax[i,j].legend()
     fig.tight_layout()
     fig.savefig(path + 'seed' + str(seed) + '-sum_x_v_y.pdf')
     plt.close(fig)

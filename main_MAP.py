@@ -206,7 +206,7 @@ if __name__ == "__main__":
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     parser = argparse.ArgumentParser()
     parser.add_argument("-learn", "--learn", help="params to learn", type=str, nargs='+', default = 'all')
-    parser.add_argument("-lr", "--lr", help="params to learn", type=float, default = 0.001)
+    parser.add_argument("-lr", "--lr", help="params to learn", type=float, default = 0.01)
     parser.add_argument("-fix", "--fix", help="params to fix", type=str, nargs='+')
     parser.add_argument("-priors", "--priors", help="priors to set", type=str, nargs='+', default = 'all')
     parser.add_argument("-case", "--case", help="case", type=str, default = datetime.date.today().strftime('%m %d %Y').replace(' ','-'))
@@ -226,7 +226,7 @@ if __name__ == "__main__":
     parser.add_argument("-N_samples", "--N_samples", help="num of samples", type=int,
                         default=500)
     parser.add_argument("-linear", "--linear", type = int, default = 1)
-    parser.add_argument("-nl_type", "--nl_type", type = str, default = "linear")
+    parser.add_argument("-nltype", "--nltype", type = str, default = "linear")
     parser.add_argument("-hyper_r", "--hyper_r", type=int, default=0)
     parser.add_argument("-hyper_mu","--hyper_mu", type = int, default = 0)
     args = parser.parse_args()
@@ -249,7 +249,7 @@ if __name__ == "__main__":
         if not os.path.isdir(path):
             os.mkdir(path)
 
-    info = 'lr' + str(args.lr) + '-linear'*(1-args.linear) + str(args.linear)*(1-args.linear) + \
+    info = 'lr' + str(args.lr) + '-linear'*(1-args.linear) + str(args.linear)*(1-args.linear) + '_' +args.nltype*(1-args.linear) + '_' + \
            '-lm'*args.lm + str(args.lm)*args.lm + '-lb'*args.lb + str(args.lb)*args.lb + '-hyper_mu'*args.hyper_mu + \
            str(args.hyper_mu)*args.hyper_mu +'-hyper_r'*args.hyper_r + \
            str(args.hyper_r)*args.hyper_r + '-N_bug' + str(args.N_bug) + \
@@ -278,7 +278,7 @@ if __name__ == "__main__":
         N_met = args.N_met, N_bug = args.N_bug, N_met_clusters = args.K,
         N_bug_clusters = args.L,meas_var = args.meas_var,
         repeat_clusters= args.rep_clust, N_samples=args.N_samples, linear = args.linear,
-        nl_type = args.nl_type)
+        nl_type = args.nltype)
     if not args.linear:
         gen_beta = gen_beta[0,:]
     plot_syn_data(path, x, y, gen_z, gen_bug_locs, gen_met_locs, mu_bug,
@@ -505,7 +505,7 @@ if __name__ == "__main__":
                 mapping['met'] = pd.Series(mapping['met']).sort_index()
                 mapping['bug'] = {i:i for i in np.arange(net.w.shape[1])}
                 mapping['bug'] = pd.Series(mapping['bug']).sort_index()
-            plot_xvy(path, net, x, train_out_vec, last_mod, param_dict, gen_bug_locs, args.seed, mapping)
+            plot_xvy(path, net, x, train_out_vec, last_mod, gen_bug_locs, y, gen_z, mapping, args.seed)
 
             # if args.n_local_clusters > 1:
             #     plot_rules_detectors_tree(path, net, last_mod, param_dict[args.seed], gen_bug_locs, args.seed)

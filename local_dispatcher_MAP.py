@@ -15,6 +15,9 @@ priors_list = [('beta','alpha','r_met','mu_met','z','pi_met','e_met'),('beta','a
 param_dict = {'N_met': 10, 'N_bug': 10, ('L', 'K'): [(2,2),(3,3)], 'seed': [0], 'hyper_mu': [0,1], 'hyper_r': [0,1],
               ('learn', 'priors'): list(zip(*[learn_list, priors_list])), 'lr': [0.01], 'iter': 20001, 'load': 1}
 
+param_dict = {'N_met': 20, 'N_bug': 20, ('L', 'K'): [(2,2)], 'seed': [0,1,2], ('learn','priors'): [('',''), ('all','all')], 'lr': [0.01],
+              'load': 1, 'linear': 0, 'nltype': ['linear', 'sin', 'exp']}
+
 total_iters = np.prod([len(v) for v in param_dict.values() if hasattr(v, '__len__')])
 
 i = 0
@@ -22,7 +25,7 @@ list_keys = []
 list_vals = []
 for key, value in param_dict.items():
     list_keys.append(key)
-    if hasattr(value, "__len__"):
+    if hasattr(value, "__len__") and not isinstance(value, str):
         list_vals.append(value)
     else:
         list_vals.append([value])
@@ -35,7 +38,7 @@ for p in zipped_params:
     i = 0
     my_str = "python3 ./main_MAP.py"
     for l in list_keys:
-        if hasattr(p[i], '__len__'):
+        if hasattr(p[i], '__len__') and not isinstance(p[i], str):
             for ii in range(len(p[i])):
                 if isinstance(p[i][ii], tuple):
                     fin = ' '.join(p[i][ii])
