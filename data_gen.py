@@ -113,7 +113,7 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
     else:
         betas = np.zeros((11,10))
         betas[0,:] = [-1,1,-1.3,1.3,-0.4,0.4,-1.7,1.7,-0.6,0.6]
-        vals = [-2.2,3.1,-5.4,4.3,-1.5,2.7,-3.3,0.8,-5.9,4.9]
+        vals = [-2.2,3.1,-0.9,1.1,-1.5,2.7,-3.4,0.8,-5.9,4.9]
         betas[1:,:] = np.diag(vals)
         betas = betas[:N_bug_clusters+1, :N_met_clusters]
         betas[-1,0] = 15
@@ -151,15 +151,19 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
     y = np.zeros((N_samples, N_met))
     for j in range(N_met):
         k = np.argmax(z_gen[j,:])
-        if not linear and nl_type != 'linear':
+        if not linear:
             if nl_type == 'exp':
                 y[:, j] = np.random.normal(betas[0, k] + np.exp(0.01 * g) @ (betas[1:, k] * alphas[:, k]), meas_var)
+            if nl_type == 'sigmoid':
+                y[:, j] = np.random.normal(betas[0, k] + sigmoid(0.011*g) @ (betas[1:, k] * alphas[:, k]), meas_var)
             if nl_type == 'sin':
-                y[:, j] = np.random.normal(betas[0, k] + np.sin(0.1*g) @ (betas[1:, k] * alphas[:, k]), meas_var)
-            else:
+                y[:, j] = np.random.normal(betas[0, k] + np.sin(0.01*g) @ (betas[1:, k] * alphas[:, k]), meas_var)
+            if nl_type == 'poly':
+                y[:,j] = np.random.normal(betas[0, k] + (0.01*g)**5 @ (betas[1:, k] * alphas[:, k]) - (0.01*g)**4 @ (betas[1:, k] * alphas[:, k]), meas_var)
+            if nl_type == 'linear':
                 y[:, j] = np.random.normal(betas[0, k] + g @ (betas[1:, k] * alphas[:, k]), meas_var)
         else:
-            y[:, j] = np.random.normal(betas[0,k] + g@(betas[1:,k]*alphas[:,k]), meas_var)
+            y[:, j] = np.random.normal(betas[0, k] + g @ (betas[1:, k] * alphas[:, k]), meas_var)
 
     return X, y, betas, alphas, w_gen, z_gen, bug_locs, met_locs, mu_bug, mu_met, r_bug, r_met, temp
 
@@ -172,13 +176,14 @@ if __name__ == "__main__":
     n_local_clusters = 1
     cluster_per_met_cluster = 0
     meas_var = 0.001
-    path = datetime.date.today().strftime('%m %d %Y').replace(' ','-') + '/'
+    # path = datetime.date.today().strftime('%m %d %Y').replace(' ','-') + '/'
+    path = 'data_gen/'
     if not os.path.isdir(path):
         os.mkdir(path)
     repeat_clusters = 0
 
 
-    for type in ['linear', 'sin', 'exp']:
+    for type in ['poly']:
         x, y, gen_beta, gen_alpha, gen_w, gen_z, gen_bug_locs, gen_met_locs, mu_bug, \
         mu_met, r_bug, r_met, gen_u = generate_synthetic_data(
             N_met=N_met, N_bug=N_bug, N_met_clusters=K, N_local_clusters=n_local_clusters, N_bug_clusters=L,
@@ -189,11 +194,12 @@ if __name__ == "__main__":
         # ranges = [[np.max(microbe_sum[:,i]/out[:,j]) - np.min(microbe_sum[:,i]/out[:,j]) for i in range(out.shape[1])] for j in range(out.shape[1])]
         # ixs = [np.argmin(r) for r in ranges]
         g = x@gen_w
-        msum = y@gen_z
         for i in range(K):
+            ixs = np.where(gen_z[:,i]==1)[0]
             for j in range(L):
                 # ax[i].scatter(microbe_sum[:,ixs[i]], out[:,i])
-                ax[i, j].scatter(msum[:, j], g[:, i])
+                for ii in ixs:
+                    ax[i, j].scatter(g[:, j], y[:, ii])
                 ax[i, j].set_xlabel('Microbe sum')
                 ax[i, j].set_ylabel(r'$y_{i}$ when $i=$' + str(i))
                 ax[i, j].set_title('Metabolite Cluster ' + str(i) + ' vs Microbe Cluster ' + str(j))

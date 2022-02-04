@@ -26,12 +26,15 @@ class MAPloss():
         self.loss_dict = {}
         self.compute_loss_for = net.compute_loss_for
 
-    #@profile
     def compute_loss(self, outputs, true):
-        temp_dist = Normal(outputs.T, np.sqrt(self.meas_var))
-        log_probs = torch.stack([temp_dist.log_prob(true[:,j]) for j in range(true.shape[1])])
-        log_probs = torch.clamp(log_probs, min = -103, max = 103)
-        self.loss_dict['y'] = -torch.log((self.net.z_act.unsqueeze(-1).repeat(1,1,log_probs.shape[-1])*torch.exp(log_probs)).sum(1)).sum()
+        if self.net.marginalize_z:
+            self.loss_dict['y'] = self.marginalized_loss(outputs, true)
+        else:
+            temp_dist = Normal(outputs.T, np.sqrt(self.meas_var))
+            log_probs = torch.stack([temp_dist.log_prob(true[:,j]) for j in range(true.shape[1])])
+            log_probs = torch.clamp(log_probs, min = -103, max = 103)
+            self.loss_dict['y'] = -torch.log((self.net.z_act.unsqueeze(-1).repeat(1,1,log_probs.shape[-1])*
+                                              torch.exp(log_probs)).sum(1)).sum()
         total_loss = 0
         for param in self.compute_loss_for:
             if len(param)>0:
@@ -40,6 +43,21 @@ class MAPloss():
                 total_loss += self.loss_dict[param]
         total_loss += self.loss_dict['y']
         return total_loss
+
+    def marginalized_loss(self, outputs, true):
+        zj = torch.eye(self.net.K)
+        loss = 0
+        for j in range(self.net.N_met):
+            loss1 = -Categorical(torch.softmax(self.net.pi_met, 1)).log_prob(zj).sum(1) - zj@MultivariateNormal(
+                self.net.mu_met, torch.eye(self.net.embedding_dim)).log_prob(torch.Tensor(self.net.microbe_locs[j,:]))
+            log_probs = -Normal(outputs.T, np.sqrt(self.meas_var)).log_prob(true[:,j])
+            loss2 = loss1 + (zj@log_probs).sum(1)
+
+            self.net.z_act[j,:] = get_one_hot(torch.argmin(loss2), self.net.K)
+            loss += (loss2).sum()
+        return loss
+
+
 
     def alpha_loss(self):
         self.loss_dict['alpha'] = ((self.net.temp_scheduled + 1) * torch.log(self.net.alpha_act*
@@ -51,7 +69,6 @@ class MAPloss():
             L_active = self.net.alpha_act.sum(0)
             nb = -NegativeBinomial(self.net.L_sm, 0.5).log_prob(L_active).sum()
             self.loss_dict['alpha'] += nb
-
 
     def beta_loss(self):
         temp_dist = self.net.distributions['beta']
@@ -71,7 +88,6 @@ class MAPloss():
 
     # def pi_bug_loss(self):
     #     self.loss_dict['pi_bug'] = (torch.Tensor(1 - np.array(self.net.params['pi_bug']['epsilon'])) * torch.softmax(self.net.pi_bug,1)).sum()
-
     def z_loss(self):
         temp_dist = [MultivariateNormal(self.net.mu_met[k, :], (torch.eye(self.net.mu_met.shape[1]) *
                                                                 torch.exp(self.net.r_met[k])).float()) for k in
@@ -95,7 +111,6 @@ class MAPloss():
     #     log_probs = torch.stack([-torch.log(multi.pdf(self.net.z_act[m,:], torch.Tensor(self.net.met_locs[m,:])))
     #                              for m in np.arange(self.net.met_locs.shape[0])]).sum()
     #     self.loss_dict['z'] = log_probs
-
     def mu_met_loss(self):
         if self.net.mu_hyper:
             Lambda = torch.diag(self.net.lambda_mu)

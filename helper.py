@@ -23,6 +23,7 @@ from torch.distributions.normal import Normal
 import torch.nn as nn
 import time
 
+
 def unmix_clusters(mu,pred_mu,pred_r,locs):
     n_clusters = mu.shape[0]
     mapping = {}
@@ -39,6 +40,9 @@ def unmix_clusters(mu,pred_mu,pred_r,locs):
     for k, v in zip(*unassigned):
         mapping[k] = v
     return mapping
+
+# def possible_z(N_met, K):
+
 
 def smoothmax(x, tau = 1):
     return torch.sum(x*torch.exp(x/tau))/torch.sum(torch.exp(x/tau))
@@ -64,7 +68,10 @@ def pairwise_eval(guess, true):
 def get_one_hot(x,l=None):
     if l is None:
         l = len(np.unique(x))
-    vec = np.zeros(l)
+    if torch.is_tensor(x):
+        vec = torch.zeros(l)
+    else:
+        vec = np.zeros(l)
     vec[x] = 1
     return vec
 

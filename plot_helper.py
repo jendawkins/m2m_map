@@ -15,7 +15,6 @@ from sklearn.metrics import confusion_matrix, normalized_mutual_info_score
 from draw_layers import *
 from matplotlib.pyplot import cm
 
-
 def plot_syn_data(path, x, y, gen_z, gen_bug_locs, gen_met_locs,
                   mu_bug, r_bug, mu_met, r_met, gen_u):
     fig, ax = plt.subplots(1, 2, figsize = (10,5))
@@ -97,11 +96,12 @@ def plot_syn_data(path, x, y, gen_z, gen_bug_locs, gen_met_locs,
     # ranges = [[np.max(microbe_sum[:,i]/out[:,j]) - np.min(microbe_sum[:,i]/out[:,j]) for i in range(out.shape[1])] for j in range(out.shape[1])]
     # ixs = [np.argmin(r) for r in ranges]
     g = x @ gen_u
-    msum = y @ gen_z
     for i in range(K):
+        ixs = np.where(gen_z[:,i]==1)[0]
         for j in range(L):
             # ax[i].scatter(microbe_sum[:,ixs[i]], out[:,i])
-            ax[i, j].scatter(msum[:, j], g[:, i])
+            for ii in ixs:
+                ax[i, j].scatter(g[:, j], y[:, ii])
             ax[i, j].set_xlabel('Microbe sum')
             ax[i, j].set_ylabel(r'$y_{i}$ when $i=$' + str(i))
             ax[i, j].set_title('Metabolite Cluster ' + str(i) + ' vs Microbe Cluster ' + str(j))
@@ -267,24 +267,29 @@ def plot_output_locations(path, net, best_mod, param_dict, fold, gen_w, mapping,
     fig.savefig(path + 'seed' + str(fold) + '-' + type + '-predicted_metab_clusters.pdf')
     plt.close(fig)
 
-def plot_xvy(path, net, x, out_vec, best_mod, targets, gen_z, mapping, seed):
+def plot_xvy(path, net, x, out_vec, best_mod, targets, gen_z, gen_w, mapping, seed):
     out = out_vec[best_mod].detach().numpy()
     out = out[:, mapping['met']]
     microbe_sum = x.detach().numpy() @ net.w.detach().numpy()
+    true_sum = x.detach().numpy() @ gen_w
     microbe_sum = microbe_sum[:, mapping['bug']]
     # target_sum = targets @ gen_z
-    # microbe_sum = microbe_sum[:, mapcping['bug']]
     fig, ax = plt.subplots(out.shape[1], microbe_sum.shape[1], figsize = (8*microbe_sum.shape[1],8*out.shape[1]))
     # ranges = [[np.max(microbe_sum[:,i]/out[:,j]) - np.min(microbe_sum[:,i]/out[:,j]) for i in range(out.shape[1])] for j in range(out.shape[1])]
     # ixs = [np.argmin(r) for r in ranges]
     for i in range(out.shape[1]):
+        ixs = np.where(gen_z[:,i]==1)[0]
         for j in range(microbe_sum.shape[1]):
-            # ax[i, j].scatter(microbe_sum[:,j], target_sum[:,i], c = 'r', label = 'True')
+            for ii in ixs:
+                if ii == ixs[0]:
+                    ax[i, j].scatter(true_sum[:,j], targets[:,ii], c = 'r', label = 'True')
+                else:
+                    ax[i, j].scatter(true_sum[:, j], targets[:, ii], c='r')
             ax[i,j].scatter(microbe_sum[:, j], out[:, i], c = 'b')
             ax[i,j].set_xlabel('Microbe sum')
             ax[i,j].set_ylabel(r'$y_{i}$ when $i=$' + str(i))
             ax[i,j].set_title('Metabolite Cluster ' + str(i) + ' vs Microbe Cluster ' + str(j))
-            # ax[i,j].legend()
+            ax[i,j].legend(loc = 'upper right')
     fig.tight_layout()
     fig.savefig(path + 'seed' + str(seed) + '-sum_x_v_y.pdf')
     plt.close(fig)
@@ -311,6 +316,7 @@ def plot_rules_detectors_tree(path, net, best_mod, param_dict, microbe_locs, see
     network.add_layer(param_dict['w'][best_mod].shape[0], label = 'rules', weight_label = 'w')
     # weights to convert from 10 outputs to 4 (decimal digits to their binary representation)
     network.draw(path + 'seed' + str(seed) + '-rules_detectors.pdf')
+
 
 def plot_output(path, path_orig, best_mod, out_vec, targets, gen_z,  param_dict, fold, mapping, type = 'unknown', meas_var = 0.1):
     # fig_dict2, ax_dict2 = plt.subplots(targets.shape[1], 1,
@@ -368,7 +374,7 @@ def plot_output(path, path_orig, best_mod, out_vec, targets, gen_z,  param_dict,
         ax_dict3[cluster].set_xlabel('Metabolite Levels')
         ax_dict3[cluster].set_ylabel('# Metabolites in Cluster x\n# Samples Per Metabolite')
 
-        axx.scatter(preds_t[:, met_ids], residuals[:, met_ids], c=color[cluster],
+        axx.scatter(preds_t[:, met_ids], residuals[:, met_ids], c=[color[cluster]],
                     label='Cluster ' + str(cluster))
     fig_dict3.tight_layout()
     fig_dict3.savefig(path + 'seed' + str(fold) + '_cluster_histograms_' + type + '.pdf')
@@ -384,17 +390,14 @@ def plot_output(path, path_orig, best_mod, out_vec, targets, gen_z,  param_dict,
     figx.savefig(path + 'seed' + str(fold) + '_residuals_' + type + '.pdf')
     plt.close(figx)
 
+
 def plot_loss(fig3, ax3, fold, iterations, loss_vec, test_loss=None, lowest_loss = None):
     ax3.set_title('Seed ' + str(fold))
-    ax3.plot(np.arange(iterations), loss_vec, label='training loss')
-    if iterations%100 != 1:
-        xvals = np.append(np.arange(0, iterations, 100), iterations)
-    else:
-        xvals = np.arange(0, iterations, 100)
+    ax3.plot(iterations, loss_vec, label='training loss')
     if test_loss is not None:
-        ax3.plot(xvals, test_loss, label='test loss')
+        ax3.plot(iterations, test_loss, label='test loss')
         ax3.legend(loc = 'upper right')
     if lowest_loss is not None:
-        ax3.plot(np.arange(iterations), lowest_loss, label='lowest loss')
+        ax3.plot(iterations, lowest_loss, label='lowest loss')
         ax3.legend(loc = 'upper right')
     return fig3, ax3
