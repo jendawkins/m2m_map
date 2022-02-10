@@ -21,12 +21,12 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
     dist_met = np.zeros((N_met, N_met))
     for i, gp in enumerate(met_gp_ids):
         for met in gp:
-            dist_met[met, gp] = np.ones((1, len(gp)))
+            dist_met[met, gp] = 2*np.ones((1, len(gp)))
             dist_met[gp, met] = dist_met[met,gp]
 
-    rand = np.random.randint(0,4, size = dist_met.shape)
+    rand = np.random.randint(0,2, size = dist_met.shape)
     rand = (rand + rand.T)/2
-    dist_met[dist_met == 0] = 10
+    dist_met[dist_met == 0] = 7
     dist_met = dist_met + rand
     np.fill_diagonal(dist_met, 0)
 
@@ -51,13 +51,13 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
         others = np.concatenate(others)
         for met in gp:
             if met in others:
-                dist_bug[met, gp] = 2.5*np.ones((1, len(gp)))
+                dist_bug[met, gp] = 2*np.ones((1, len(gp)))
             else:
-                dist_bug[met, gp] = np.ones((1, len(gp)))
+                dist_bug[met, gp] = 2*np.ones((1, len(gp)))
             dist_bug[gp, met] = dist_bug[met,gp]
-    rand = np.random.randint(0,4, size = dist_bug.shape)
+    rand = np.random.randint(0,2, size = dist_bug.shape)
     rand = (rand + rand.T)/2
-    dist_bug[dist_bug == 0] = 10
+    dist_bug[dist_bug == 0] = 7
     dist_bug = dist_bug + rand
     np.fill_diagonal(dist_bug, 0)
 
@@ -116,9 +116,9 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
         vals = [-2.2,3.1,-0.9,1.1,-1.5,2.7,-3.4,0.8,-5.9,4.9]
         betas[1:,:] = np.diag(vals)
         betas = betas[:N_bug_clusters+1, :N_met_clusters]
-        betas[-1,0] = 15
+        # betas[-1,0] = 0
         alphas = np.ones((N_bug_clusters, N_met_clusters))
-        alphas[-1,0] = 0
+        alphas[-1,0] = -1
         # cluster_starts = np.arange(200,200+(100*10) + 20, 200)
         # cluster_ends = np.arange(300,300+(100*10) + 20, 200)
         cluster_starts = [100,350,510,650,870,1000,1200,1400,1600,1800]

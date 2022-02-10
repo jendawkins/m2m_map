@@ -10,13 +10,33 @@ args = parser.parse_args()
 # local = 1
 # learn_num_clusters = 1
 # learn_list = ['beta','alpha',('r_met', 'mu_met', 'z'),('r_bug','mu_bug'),('pi_met','z')]
-learn_list = [('beta','alpha','r_met','mu_met','z','pi_met','e_met'),('beta','alpha','r_met','mu_met','z','pi_met','e_met')]
-priors_list = [('beta','alpha','r_met','mu_met','z','pi_met','e_met'),('beta','alpha','r_met','mu_met','z','pi_met')]
-param_dict = {'N_met': 10, 'N_bug': 10, ('L', 'K'): [(2,2),(3,3)], 'seed': [0], 'hyper_mu': [0,1], 'hyper_r': [0,1],
-              ('learn', 'priors'): list(zip(*[learn_list, priors_list])), 'lr': [0.01], 'iter': 20001, 'load': 1}
+learn_list = [('beta','alpha','r_met','mu_met','z','pi_met','e_met')]
+    # ,('beta','alpha','r_met','mu_met','z','pi_met','e_met')]
+priors_list = [('beta','alpha','r_met','mu_met','z','pi_met')]
+    # ,('beta','alpha','r_met','mu_met','z','pi_met')]
+# learn_list = [('beta','alpha','r_met','mu_met','z','pi_met')]
+# priors_list = [('beta','alpha','r_met','mu_met','z','pi_met')]
+# param_dict = {'N_met': 12, 'N_bug': 12, ('L', 'K'): [(2,2)], 'seed': 0, 'hyper_mu': [0], 'hyper_r': [0],
+#               ('learn', 'priors'): list(zip(*[learn_list, priors_list])), 'lr': [0.1], 'iter': 30001, 'load': 0,
+#               'mz': 0, 'lm': 1, 'linear': 1,
+#               'case': 'learn_met_clusters-old_dat_init',
+#               'prior_meas_var': 10, 'adjust_mvar': 0, 'adjust_lr': 1}
 
-param_dict = {'N_met': 20, 'N_bug': 20, ('L', 'K'): [(2,2)], 'seed': [0,1,2], ('learn','priors'): [('',''), ('all','all')], 'lr': [0.01],
-              'load': 1, 'linear': 0, 'nltype': ['linear', 'sin', 'exp']}
+# learn_list = [('beta','alpha','r_met','mu_met','z','pi_met')]
+# priors_list = [('beta','alpha','r_met','mu_met','z','pi_met')]
+# param_dict = {'N_met': 12, 'N_bug': 12, ('L', 'K'): [(2,2)], 'seed': 0, 'hyper_mu': 0, 'hyper_r': 0,
+#               ('learn', 'priors'): list(zip(*[learn_list, priors_list])), 'lr': [0.1,0.01], 'iter': 20001, 'load': 0,
+#               'mz': 0, 'lm': 0, 'case': 'learn_met_clusters-initialize_at_locs',
+#               'prior_meas_var': 1e6, 'adjust_mvar': 0}
+# param_dict = {'N_met': 20, 'N_bug': 20, ('L', 'K'): [(2,2)], 'seed': 0, ('learn','priors'):
+#     [('',''),('alpha','alpha')], 'lr': [0.01, 0.001],
+#               'load': 1, 'linear': 0, 'nltype': ['linear', 'sin', 'exp','poly', 'sigmoid'], 'case': 'learn_non_linear',
+#               'prior_meas_var': 1e6, 'adjust_mvar': 0, 'adjust_lr': 1}
+#
+#
+param_dict = {'N_met': 12, 'N_bug': 12, ('L', 'K'): [(2,2), (3,3)], 'seed': [0,2,5,6,9], ('learn','priors'): [('all','all')],
+              'lr': 0.1, 'adjust_mvar': 0, 'prior_meas_var': 1e6,
+              'load': 0, 'linear': 1, 'mz': 1, 'lm': 0, 'lb': 0, 'adjust_lr': 1, 'case': 'base_case'}
 
 total_iters = np.prod([len(v) for v in param_dict.values() if hasattr(v, '__len__')])
 

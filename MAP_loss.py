@@ -22,7 +22,6 @@ from helper import *
 class MAPloss():
     def __init__(self,net):
         self.net = net
-        self.meas_var = net.meas_var
         self.loss_dict = {}
         self.compute_loss_for = net.compute_loss_for
 
@@ -30,9 +29,8 @@ class MAPloss():
         if self.net.marginalize_z:
             self.loss_dict['y'] = self.marginalized_loss(outputs, true)
         else:
-            temp_dist = Normal(outputs.T, np.sqrt(self.meas_var))
-            log_probs = torch.stack([temp_dist.log_prob(true[:,j]) for j in range(true.shape[1])])
-            log_probs = torch.clamp(log_probs, min = -103, max = 103)
+            temp_dist = Normal(outputs.T, torch.sqrt(self.net.meas_var))
+            log_probs = torch.stack([temp_dist.log_prob(true[:,j]) for j in np.arange(true.shape[1])])
             self.loss_dict['y'] = -torch.log((self.net.z_act.unsqueeze(-1).repeat(1,1,log_probs.shape[-1])*
                                               torch.exp(log_probs)).sum(1)).sum()
         total_loss = 0
@@ -45,16 +43,18 @@ class MAPloss():
         return total_loss
 
     def marginalized_loss(self, outputs, true):
-        zj = torch.eye(self.net.K)
-        loss = 0
-        for j in range(self.net.N_met):
-            loss1 = -Categorical(torch.softmax(self.net.pi_met, 1)).log_prob(zj).sum(1) - zj@MultivariateNormal(
-                self.net.mu_met, torch.eye(self.net.embedding_dim)).log_prob(torch.Tensor(self.net.microbe_locs[j,:]))
-            log_probs = -Normal(outputs.T, np.sqrt(self.meas_var)).log_prob(true[:,j])
-            loss2 = loss1 + (zj@log_probs).sum(1)
+        c_hat = torch.tensor(np.array(list(itertools.product(np.arange(self.net.K),repeat = self.net.N_met))))
+        mu = self.net.mu_met[c_hat,:]
+        eye = torch.eye(self.net.embedding_dim).unsqueeze(0).unsqueeze(0).expand(c_hat.shape[0], c_hat.shape[1], -1,-1)
+        r = self.net.r_met[c_hat].unsqueeze(-1).unsqueeze(-1).expand(-1,-1,self.net.embedding_dim,self.net.embedding_dim)*eye
+        z_hat = nn.functional.one_hot(c_hat, self.net.K)
 
-            self.net.z_act[j,:] = get_one_hot(torch.argmin(loss2), self.net.K)
-            loss += (loss2).sum()
+        loss = -torch.logsumexp((MultivariateNormal(mu, r).log_prob(torch.Tensor(self.net.met_locs)) +
+                    (Categorical(self.net.pi_met).log_prob(z_hat)*z_hat).sum(-1) +
+                    Normal(outputs.T[c_hat, :],
+                           self.net.meas_var.unsqueeze(0).unsqueeze(0).expand(
+                               c_hat.shape[-1], outputs.shape[0])).log_prob(true.T).sum(-1)).sum(1), 0)
+
         return loss
 
 
@@ -89,19 +89,22 @@ class MAPloss():
     # def pi_bug_loss(self):
     #     self.loss_dict['pi_bug'] = (torch.Tensor(1 - np.array(self.net.params['pi_bug']['epsilon'])) * torch.softmax(self.net.pi_bug,1)).sum()
     def z_loss(self):
-        temp_dist = [MultivariateNormal(self.net.mu_met[k, :], (torch.eye(self.net.mu_met.shape[1]) *
-                                                                torch.exp(self.net.r_met[k])).float()) for k in
-                     np.arange(self.net.mu_met.shape[0])]
-        probs = torch.stack(
-            [torch.exp(torch.stack([temp_dist[k].log_prob(torch.FloatTensor(self.net.met_locs[m, :])) for
-                                    k in np.arange(self.net.mu_met.shape[0])])) for m in
-             np.arange(self.net.met_locs.shape[0])])
-        self.loss_dict['z'] = self.net.temp_scheduled*(torch.stack([(-torch.log(torch.softmax(self.net.pi_met,1)) +
-                                                                   (self.net.temp_scheduled + 1) * torch.log(self.net.z_act[m, :]) +
-                                       torch.log((torch.softmax(self.net.pi_met,1) *
-                                                  (self.net.z_act[m, :].pow(-self.net.temp_scheduled))).sum())).sum() -
-                                      torch.log(torch.matmul(self.net.z_act[m, :],probs[m,:]))
-                                      for m in np.arange(self.net.met_locs.shape[0])]).sum(0))
+        # probability of all K clusters for all M metabolites
+        con = Concrete(torch.softmax(self.net.pi_met, 1), self.net.temp_scheduled)
+        self.loss_dict['z'] = -torch.stack(
+            [torch.log(torch.stack([self.net.z_act[m,k]*torch.exp(MultivariateNormal(self.net.mu_met[k, :], (torch.eye(self.net.mu_met.shape[1]) *
+                                                                torch.exp(self.net.r_met[k])).float()).log_prob(
+                torch.FloatTensor(self.net.met_locs[m, :]))) for k in np.arange(self.net.mu_met.shape[0])]).sum()) +
+             torch.log(con.pdf(self.net.z_act[m,:])) for m in
+             np.arange(self.net.met_locs.shape[0])]).sum()
+        # con = Concrete(torch.softmax(self.net.pi_met, 1), self.net.temp_scheduled)
+        # probs2 = con.pdf(self.net.z_act[m,:])
+        # self.loss_dict['z'] = self.net.temp_scheduled*(torch.stack([(-torch.log(torch.softmax(self.net.pi_met,1)) +
+        #                                                            (self.net.temp_scheduled + 1) * torch.log(self.net.z_act[m, :]) +
+        #                                torch.log((torch.softmax(self.net.pi_met,1) *
+        #                                           (self.net.z_act[m, :].pow(-self.net.temp_scheduled))).sum())).sum() -
+        #                               torch.log(torch.matmul(self.net.z_act[m, :],probs[m,:]))
+        #                               for m in np.arange(self.net.met_locs.shape[0])]).sum(0))
 
     # def z_loss(self):
     #     mvn = [MultivariateNormal(self.net.mu_met[k,:], (torch.eye(self.net.mu_met.shape[1]) *
@@ -121,7 +124,7 @@ class MAPloss():
             gamma = Gamma(0.5, 0.5)
             self.loss_dict['mu_met'] += -gamma.log_prob(torch.exp(self.net.lambda_mu)).sum()
 
-            mvn = MultivariateNormal(torch.zeros(self.net.D), torch.eye(self.net.D, self.net.D))
+            mvn = MultivariateNormal(torch.zeros(self.net.embedding_dim), torch.eye(self.net.embedding_dim, self.net.embedding_dim))
             self.loss_dict['mu_met'] += -mvn.log_prob(self.net.b).sum()
         else:
             temp_dist = self.net.distributions['mu_met']
