@@ -12,6 +12,7 @@ from torch.distributions.categorical import Categorical
 from torch.distributions.bernoulli import Bernoulli
 from torch.distributions.normal import Normal
 from torch.distributions.negative_binomial import NegativeBinomial
+from torch.distributions.beta import Beta
 from torch.distributions.binomial import Binomial
 import torch.nn as nn
 import time
@@ -29,7 +30,7 @@ class MAPloss():
         if self.net.marginalize_z:
             self.loss_dict['y'] = self.marginalized_loss(outputs, true)
         else:
-            temp_dist = Normal(outputs.T, torch.sqrt(self.net.meas_var))
+            temp_dist = Normal(outputs.T, torch.sqrt(torch.exp(self.net.sigma)))
             log_probs = torch.stack([temp_dist.log_prob(true[:,j]) for j in np.arange(true.shape[1])])
             self.loss_dict['y'] = -torch.log((self.net.z_act.unsqueeze(-1).repeat(1,1,log_probs.shape[-1])*
                                               torch.exp(log_probs)).sum(1)).sum()
@@ -40,34 +41,69 @@ class MAPloss():
                 fun()
                 total_loss += self.loss_dict[param]
         total_loss += self.loss_dict['y']
+
+        # if self.net.marginalize_w and ('mu_bug' in self.compute_loss_for or 'r_bug' in self.compute_loss_for):
+        #     self.loss_dict['w'] = self.w_loss()
+        #     total_loss += self.loss_dict['w']
+        if torch.isnan(total_loss):
+            print('total loss is nan')
         return total_loss
 
     def marginalized_loss(self, outputs, true):
-        c_hat = torch.tensor(np.array(list(itertools.product(np.arange(self.net.K),repeat = self.net.N_met))))
-        mu = self.net.mu_met[c_hat,:]
-        eye = torch.eye(self.net.embedding_dim).unsqueeze(0).unsqueeze(0).expand(c_hat.shape[0], c_hat.shape[1], -1,-1)
-        r = self.net.r_met[c_hat].unsqueeze(-1).unsqueeze(-1).expand(-1,-1,self.net.embedding_dim,self.net.embedding_dim)*eye
-        z_hat = nn.functional.one_hot(c_hat, self.net.K)
 
-        loss = -torch.logsumexp((MultivariateNormal(mu, r).log_prob(torch.Tensor(self.net.met_locs)) +
-                    (Categorical(self.net.pi_met).log_prob(z_hat)*z_hat).sum(-1) +
-                    Normal(outputs.T[c_hat, :],
-                           self.net.meas_var.unsqueeze(0).unsqueeze(0).expand(
-                               c_hat.shape[-1], outputs.shape[0])).log_prob(true.T).sum(-1)).sum(1), 0)
+        eye = torch.eye(self.net.embedding_dim).unsqueeze(0).expand(self.net.K, -1, -1)
+        var = torch.exp(self.net.r_met).unsqueeze(-1).unsqueeze(-1).expand(-1,self.net.embedding_dim,
+                                                                           self.net.embedding_dim)*eye
+
+        z_log_probs = torch.log(torch.softmax(self.net.pi_met, 1).T).unsqueeze(1) + MultivariateNormal(
+            self.net.mu_met.unsqueeze(1).expand(-1,self.net.N_met,-1),var.unsqueeze(1).expand(
+                -1,self.net.N_met,-1,-1)).log_prob(
+            torch.Tensor(self.net.met_locs)).unsqueeze(1) + \
+               Normal(outputs.T.unsqueeze(-1).expand(-1,-1,self.net.N_met), torch.sqrt(torch.exp(self.net.sigma))).log_prob(true)
+
+        # if 'r_met' in self.net.compute_loss_for or 'mu_met' in self.net.compute_loss_for or 'pi_met' in self.net.compute_loss_for:
+        self.net.z_act = nn.functional.one_hot(torch.argmax(z_log_probs.sum(1),0),self.net.K)
+        loss = -torch.logsumexp(z_log_probs, 0).sum(1).sum()
 
         return loss
 
+    def w_loss(self):
+        eye = torch.eye(self.net.embedding_dim).unsqueeze(0).expand(self.net.L, -1, -1)
+        var = torch.exp(self.net.r_bug).unsqueeze(-1).unsqueeze(-1).expand(-1,self.net.embedding_dim,
+                                                                           self.net.embedding_dim)*eye
 
+        if self.net.learn_w!=0:
+            temp = MultivariateNormal(self.net.mu_bug.unsqueeze(1).expand(
+                -1,self.net.N_bug,-1),var.unsqueeze(1).expand(-1,self.net.N_bug,-1,-1)
+                          ).log_prob(torch.Tensor(self.net.microbe_locs)).T
+
+            if self.net.hard_w:
+                loss =-(BinaryConcrete(self.net.w_loc, self.net.omega_temp).log_prob(self.net.w_soft).sum(1) + \
+                  torch.log((torch.exp(temp)*self.net.w_act).sum(1) + 1e-10)).sum()
+            else:
+                loss = -(BinaryConcrete(self.net.w_loc, self.net.omega_temp).log_prob(self.net.w_act).sum(1) + \
+                         torch.log((torch.exp(temp) * self.net.w_act).sum(1) + 1e-10)).sum()
+
+        # if self.net.learn_w==2:
+            # w_log_probs = Bernoulli(0.1).log_prob(torch.tensor(1).float()) + MultivariateNormal(self.net.mu_bug.unsqueeze(1).
+            #                                                                              expand(-1,self.net.N_bug,-1),var.unsqueeze(1).expand(
+            #         -1,self.net.N_bug,-1,-1)).log_prob(
+            #     torch.Tensor(self.net.microbe_locs))
+            # w_log_probs[w_log_probs>0] = 0
+            # temp = torch.exp(w_log_probs.detach()).T
+            # norm = torch.stack([torch.logsumexp(w_log_probs.index_fill(-1,i,0),1) for i in torch.arange(w_log_probs.shape[1])])
+            # loss = -torch.logsumexp(w_log_probs,1).sum()
+            self.loss_dict['w'] = loss
+
+
+    def p_loss(self):
+        self.loss_dict['p'] = -Beta(0.01,10).log_prob(torch.exp(self.net.p))
 
     def alpha_loss(self):
-        self.loss_dict['alpha'] = ((self.net.temp_scheduled + 1) * torch.log(self.net.alpha_act*
-                                                                             self.net.temp_scheduled*self.net.alpha_loc)
-                                   + (self.net.temp_scheduled + 1) * torch.log(1 - self.net.alpha_act) +
-                              2 * torch.log(self.net.alpha_act.pow(-self.net.temp_scheduled)*self.net.alpha_loc +
-                                            (1-self.net.alpha_act).pow(-self.net.temp_scheduled))).sum()
+        self.loss_dict['alpha'] = -BinaryConcrete(self.net.alpha_loc, self.net.alpha_temp).log_prob(self.net.alpha_soft).sum().sum()
         if self.net.learn_num_bug_clusters:
             L_active = self.net.alpha_act.sum(0)
-            nb = -NegativeBinomial(self.net.L_sm, 0.5).log_prob(L_active).sum()
+            nb = -NegativeBinomial(self.net.L, torch.exp(self.net.p)).log_prob(L_active).sum()
             self.loss_dict['alpha'] += nb
 
     def beta_loss(self):
@@ -139,7 +175,6 @@ class MAPloss():
             self.loss_dict['r_met'] += -gamma.log_prob(1 / torch.exp(self.net.C)).sum()
         else:
             val = 1 / torch.exp(self.net.r_met)
-            val = torch.clamp(val, min=1e-20)
             gamma = self.net.distributions['r_met']
             self.loss_dict['r_met'] = -gamma.log_prob(val).sum()
 
@@ -153,11 +188,8 @@ class MAPloss():
         gamma = self.net.distributions['e_met']
         self.loss_dict['e_met'] = -gamma.log_prob(val).sum()
 
-    def rad_mu_loss(self):
-        kappa = torch.stack([torch.sqrt(((self.net.mu_bug - torch.tensor(
-            self.net.microbe_locs[m,:])).pow(2)).sum(-1)) for m in range(self.net.microbe_locs.shape[0])])
-        num_gzero = [len(torch.where((torch.exp(self.net.r_bug[l]) - kappa[:,l])>0)[0]) for l in range(len(self.net.r_bug))]
-        binom = Binomial(self.net.microbe_locs.shape[0], (1/len(self.net.r_bug)))
-        log_prob = -binom.log_prob(torch.Tensor(np.array(num_gzero))).sum()
-        self.loss_dict['rad_mu'] = log_prob
+
+    def sigma_loss(self):
+        gamma_log_prob = Gamma(1,1).log_prob(1/torch.exp(self.net.sigma))
+        self.loss_dict['sigma'] = -gamma_log_prob
 

@@ -39,6 +39,15 @@ class BinaryConcrete():
         bottom = (self.loc*(x.pow(-self.tau)) + (1-x).pow(-self.tau)).pow(2)
         return top / bottom
 
+    def log_prob(self, x):
+        if not torch.is_tensor(x):
+            try:
+                x = torch.Tensor(x)
+            except:
+                x = torch.Tensor([x])
+        return torch.log(self.tau) + torch.log(self.loc) + (self.tau - 1)*torch.log(x) + \
+               (-self.tau - 1)*torch.log(1-x) - 2*torch.log(self.loc*(x.pow(-self.tau)) + (1-x).pow(-self.tau))
+
 
 class Concrete():
     def __init__(self, loc, tau):

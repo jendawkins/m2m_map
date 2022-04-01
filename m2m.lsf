@@ -1,8 +1,8 @@
 
 #!/bin/bash
 #BSUB -J m2m
-#BSUB -o m2m_L1_K4_mvar1.out
-#BSUB -e m2m_L1_K4_mvar1.err
+#BSUB -o case{9}_L{4}_K{5}.out
+#BSUB -e case{9}_L{4}_K{5}.err
 
 # This is a sample script with specific resource requirements for the
 # **bigmemory** queue with 64GB memory requirement and memory
@@ -19,7 +19,7 @@
 
 # Please make a copy of this script for your own modifications
 
-#BSUB -q bigmem
+#BSUB -q gpu
 
 # Some important variables to check (Can be removed later)
 echo '---PROCESS RESOURCE LIMITS---'
@@ -50,8 +50,7 @@ echo '---TEMPORARY SCRATCH FOLDER ($TMPDIR):---'
 echo $TMPDIR
 
 # Add your job command here
-
+# source activate dispatcher
+# module load Anaconda3/5.2.0
 cd /PHShome/jjd65/m2m_map
-rm *.err
-rm *.out
-python3 ./main_MAP.py -learn all -priors none -N_met 20 -N_bug 20 -L 6 -K 6 -meas_var 1 -prior_meas_var 4 -seed 1
+python3 ./main_MAP.py -N_met 20 -N_bug 20 -L 2 -K 2 -seed 1 -linear 0 -learn all -priors all -lr 0.01 -iter 20001 -load 1 -lm 0 -nltype poly -adjust_lr 1

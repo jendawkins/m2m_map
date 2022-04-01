@@ -23,6 +23,26 @@ from torch.distributions.normal import Normal
 import torch.nn as nn
 import time
 
+def sample_gumbel(shape, eps=1e-20):
+    U = torch.rand(shape)
+    return -torch.log(-torch.log(U + eps) + eps)
+
+def gumbel_sigmoid(logits, temperature, epsilon):
+    """
+    ST-gumple-softmax
+    input: [*, n_class]
+    return: flatten --> [*, n_class] an one-hot vector
+    """
+    temp = logits + sample_gumbel(logits.size())
+    y = (1-2*epsilon)*torch.sigmoid(temp/temperature) + epsilon
+
+    y_hard = torch.round(y)
+    # Set gradients w.r.t. y_hard gradients w.r.t. y
+    y_hard = (y_hard - y).detach() + y
+    return y, y_hard
+
+def get_lr(T, lr_max, lr_min, Tcurr):
+    return lr_min + 0.5*(lr_max - lr_min)*(1 + np.cos(Tcurr*np.pi/T))
 
 def unmix_clusters(mu,pred_mu,pred_r,locs):
     n_clusters = mu.shape[0]
