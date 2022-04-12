@@ -111,6 +111,8 @@ def plot_syn_data(path, x, y, gen_z, gen_bug_locs, gen_met_locs,
     ax_xlim = (np.min(g.flatten())-10, np.max(g.flatten())+10)
     for i in range(K):
         ixs = np.where(gen_z[:,i]==1)[0]
+        if len(ixs) == 0:
+            continue
         for j in range(L):
             # ax[i].scatter(microbe_sum[:,ixs[i]], out[:,i])
             for ii in ixs:
@@ -413,7 +415,7 @@ def plot_interactions(path, best_mod, param_dict,seed):
         weights = best_alpha
 
     best_w[best_w < 0.5] = 0
-    best_beta = best_beta*100
+    # best_beta = best_beta*100
 
     widest = max([best_w.shape[0], best_z.shape[0]])
     network = NeuralNetwork(number_of_neurons_in_widest_layer=widest, neuron_radius=4,
@@ -453,7 +455,7 @@ def plot_rules_detectors_tree(path, net, best_mod, param_dict, microbe_locs, see
     plt.figure()
 
 
-def plot_output(path, path_orig, best_mod, out_vec, targets, gen_z,  param_dict, fold, type = 'unknown', meas_var = 0.1):
+def plot_output(path, best_mod, out_vec, targets, gen_z, gen_w, param_dict, fold, type = 'unknown', meas_var = 0.1):
     best_w = param_dict['w'][best_mod]
     bug_clusters = [np.where(best_w[:,i]>0.5)[0] for i in np.arange(best_w.shape[1])]
     for ii,clust in enumerate(bug_clusters):
@@ -463,6 +465,20 @@ def plot_output(path, path_orig, best_mod, out_vec, targets, gen_z,  param_dict,
         else:
             with open(path + 'seed' + str(fold) + 'microbe_clusters.txt', 'a') as f:
                 f.writelines('Cluster ' + str(ii) + ': ' + str(clust) + '\n')
+
+    tp, fp, tn, fn, ri = pairwise_eval(np.round(best_w), gen_w)
+    pairwise_cf = {'Same cluster': {'Predicted Same cluster': tp, 'Predicted Different cluster': fn},
+                   'Different cluster': {'Predicted Same cluster': fp, 'Predicted Different cluster': tn}}
+    pd.DataFrame(pairwise_cf).T.to_csv(
+        path + 'seed' + str(fold) + '_PairwiseConfusionBugs_' + type + '_' + str(np.round(ri, 3)).replace('.',
+                                                                                                            'd') + '.csv')
+    ri = str(np.round(ri, 3))
+    if not os.path.isfile(path + type +'-ri_bug.txt'):
+        with open(path + type +'-ri_bug.txt', 'w') as f:
+            f.write('Seed ' + str(fold) + ':RI ' + ri + '\n')
+    else:
+        with open(path + type +'-ri_bug.txt', 'a') as f:
+            f.write('Seed ' + str(fold) + ':RI ' + ri + '\n')
 
     # fig_dict2, ax_dict2 = plt.subplots(targets.shape[1], 1,
     #                                                figsize=(8, 4 * targets.shape[1]))
@@ -485,12 +501,12 @@ def plot_output(path, path_orig, best_mod, out_vec, targets, gen_z,  param_dict,
         ri = str(np.round(ri, 3))
     except:
         ri = 'NA'
-    if not os.path.isfile(path_orig + 'seed' + str(fold) + '-' + type +'-nmi_ri.txt'):
-        with open(path_orig + 'seed' + str(fold) + '-' + type +'-nmi_ri.txt', 'w') as f:
-            f.write('Epoch ' + str(len(out_vec)) + ': NMI ' + str(nmi) + ', RI ' + ri + '\n')
+    if not os.path.isfile(path + type +'-nmi_ri.txt'):
+        with open(path + type +'-nmi_ri.txt', 'w') as f:
+            f.write('Seed ' + str(fold) + ': NMI ' + str(nmi) + ', RI ' + ri + '\n')
     else:
-        with open(path_orig + 'seed' + str(fold) + '-' + type +'-nmi_ri.txt', 'a') as f:
-            f.write('Epoch ' + str(len(out_vec)) + ': NMI ' + str(nmi) + ', RI ' + ri + '\n')
+        with open(path + type +'-nmi_ri.txt', 'a') as f:
+            f.write('Seed ' + str(fold) + ': NMI ' + str(nmi) + ', RI ' + ri + '\n')
 
 
     # gen_z = gen_z[:, mapping['met']]

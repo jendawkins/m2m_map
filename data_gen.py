@@ -115,7 +115,7 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
         cluster_ends = np.append(cluster_ends, cluster_starts[-1] + cluster_disparity - cluster_disparity/10)
     else:
         betas = np.zeros((11,10))
-        betas[0,:] = [-1,1,-1.3,1.3,-0.4,0.4,-1.7,1.7,-0.6,0.6]
+        betas[0,:] = [-.01,.1,0.03,0.13,-0.4,0.4,-0.07,0.017,-0.06,0.06]
         vals = [-5.4,4.1,-4.8,6.7,-4.5,3.9,-3.4,0.8,-5.9,4.9]
         betas[1:,:] = np.diag(vals)
         betas = betas[:N_bug_clusters+1, :N_met_clusters]
@@ -169,10 +169,10 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
         else:
             y[:, j] = np.random.normal(betas[0, k] + g @ (betas[1:, k] * alphas[:, k]), meas_var)
 
-    y = (y - np.mean(y, 0)) / np.std((y - np.mean(y)), 0)
-    y_per_clust = np.vstack([y[:,z_gen[:,i]==1].mean(1) for i in np.arange(N_met_clusters)]).T
-    g_new = np.hstack((np.ones((g.shape[0], 1)), g))
-    betas = np.linalg.inv(g_new.T@g_new)@(g_new.T@(y_per_clust))
+    # y = (y - np.mean(y, 0)) / np.std((y - np.mean(y)), 0)
+    # y_per_clust = np.vstack([y[:,z_gen[:,i]==1].mean(1) for i in np.arange(N_met_clusters)]).T
+    # g_new = np.hstack((np.ones((g.shape[0], 1)), g))
+    # betas = np.linalg.inv(g_new.T@g_new)@(g_new.T@(y_per_clust))
     return X, y, betas, alphas, w_gen, z_gen, bug_locs, met_locs, mu_bug, mu_met, r_bug, r_met, temp
 
 

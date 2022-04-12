@@ -26,21 +26,21 @@ import datetime
 import sys
 
 class Model(nn.Module):
-    def __init__(self, met_locs, microbe_locs, temp_scheduled = 1, num_local_clusters = 6, K = 2, beta_var = 16.,
+    def __init__(self, met_locs, microbe_locs, num_local_clusters = 6, K = 2, beta_var = 16.,
                  seed = 0, alpha_temp = 1, omega_temp = 1, omega_temp_2 = 1, data_meas_var = 1, L = 3, cluster_per_met_cluster = 1,
                  compute_loss_for = ['alpha','beta','w','z','mu_bug','r_bug','pi_bug','mu_met','r_met','pi_met'],
                  learn_num_met_clusters = False, learn_num_bug_clusters = False, linear = True, mu_hyper = False, r_hyper = False,
                 l1= 1, marginalize_z = True, pp = 1, learn_mvar = True, learn_w = True, sample_a = True, hard_w = True):
         super(Model, self).__init__()
         self.num_local_clusters = num_local_clusters
-        self.sigma_beta = 1/(50*data_meas_var)
-        self.sigma_alpha = self.sigma_beta/data_meas_var
+        desired_var = 0.1
+        self.sigma_alpha = ((data_meas_var**2)/desired_var) + 2
+        self.sigma_beta = data_meas_var*(self.sigma_alpha - 1)
         self.beta_var = beta_var
         self.mu_var_met = 10*(1/met_locs.shape[1])*np.sum(np.var(met_locs, 0))
         self.mu_var_bug = 10*(1/microbe_locs.shape[1])*np.sum(np.var(microbe_locs, 0))
         self.compute_loss_for = compute_loss_for
         self.MAPloss = MAPloss(self)
-        self.temp_scheduled = temp_scheduled
         self.met_locs = met_locs
         self.microbe_locs = microbe_locs
         self.embedding_dim = met_locs.shape[1]
@@ -85,17 +85,19 @@ class Model(nn.Module):
             ) for pp in np.arange(self.pp)]) for l in np.arange(self.L)]) for k in np.arange(self.K)])
 
         self.alpha_loc = 1/(self.L_sm*self.K_sm)
-        self.met_range = np.array([np.max(self.met_locs[:, d]) - np.min(self.met_locs[:, d]) for d in np.arange(self.met_locs.shape[1])])
+        self.met_range = np.max(self.met_locs,0) - np.min(self.met_locs,0)
         self.Ro = torch.diag(torch.Tensor(self.met_range))
-        self.r_scale_met = np.sqrt(np.sum(self.met_range**2)) / (2*self.K_sm)
+        self.r_scale_met = np.sqrt(np.sum(self.met_range**2)) / (self.K_sm)
 
-        self.bug_range = np.array([np.max(self.microbe_locs[:, d]) - np.min(self.microbe_locs[:, d]) for d in np.arange(self.microbe_locs.shape[1])])
-        self.r_scale_bug = np.sqrt(np.sum(self.bug_range**2)) / (2*self.L_sm)
+        self.bug_range = np.max(self.microbe_locs,0) - np.min(self.microbe_locs,0)
+        self.r_scale_bug = np.sqrt(np.sum(self.bug_range**2)) / (self.L_sm)
 
         self.params = {}
         self.distributions = {}
+        self.params['w'] = {'loc': 1/self.L, 'scale': self.omega_temp}
+        self.params['z'] = {'loc': 1 / self.L, 'scale': self.omega_temp}
         self.params['beta'] = {'mean': 0, 'scale': np.sqrt(self.beta_var)}
-        self.params['alpha'] = {'loc': self.alpha_loc, 'temp':self.temp_scheduled}
+        self.params['alpha'] = {'loc': self.alpha_loc, 'temp':self.alpha_temp}
         self.params['mu_met'] = {'mean': 0, 'var': self.mu_var_met}
         self.params['mu_bug'] = {'mean': 0, 'var': self.mu_var_bug}
         self.params['r_bug'] = {'dof': 2, 'scale': self.r_scale_bug}
@@ -103,63 +105,45 @@ class Model(nn.Module):
         self.params['e_met'] = {'dof': 10, 'scale': 10*self.K}
         self.params['pi_met'] = {'epsilon': [2] * self.K}
         self.params['b'] = {'mean': 0, 'scale': 1}
-        self.params['sigma'] = {'dof': 0.01, 'scale': 0.01}
+        self.params['sigma'] = {'dof': self.sigma_alpha, 'scale': self.sigma_beta}
         self.params['p'] = {'alpha': 1, 'beta': 5}
         self.distributions['beta'] = Normal(self.params['beta']['mean'], self.params['beta']['scale'])
         self.distributions['alpha'] = BinaryConcrete(self.params['alpha']['loc'], self.params['alpha']['temp'])
-        self.distributions['mu_met'] = MultivariateNormal(torch.zeros(self.embedding_dim), 10*self.params['mu_met']['var']*torch.eye(self.embedding_dim))
-        self.distributions['mu_bug'] = MultivariateNormal(torch.zeros(self.embedding_dim), 10*self.params['mu_bug']['var']*torch.eye(self.embedding_dim))
-        self.distributions['r_bug'] = Gamma(self.params['r_bug']['dof'], 2*self.params['r_bug']['scale'])
-        self.distributions['r_met'] = Gamma(self.params['r_met']['dof'], 2*self.params['r_met']['scale'])
+        self.distributions['mu_met'] = MultivariateNormal(torch.zeros(self.embedding_dim), (self.params['mu_met']['var'])*torch.eye(self.embedding_dim))
+        self.distributions['mu_bug'] = MultivariateNormal(torch.zeros(self.embedding_dim), (self.params['mu_bug']['var'])*torch.eye(self.embedding_dim))
+        self.distributions['r_bug'] = Gamma(self.params['r_bug']['dof'], self.params['r_bug']['scale'])
+        self.distributions['r_met'] = Gamma(self.params['r_met']['dof'], self.params['r_met']['scale'])
         # self.params['pi_bug'] = {'epsilon': [2]*self.L}
         self.distributions['pi_met'] = Dirichlet(torch.Tensor(self.params['pi_met']['epsilon']))
-        self.distributions['e_met'] = Gamma(10, 10*self.K)
+        self.distributions['e_met'] = Gamma(self.params['e_met']['dof'], self.params['e_met']['scale'])
         self.distributions['b'] = MultivariateNormal(torch.zeros(self.embedding_dim), torch.eye(self.embedding_dim))
-        self.distributions['sigma'] = Gamma(0.1, 0.1)
+        self.distributions['sigma'] = Gamma(self.params['sigma']['dof'], self.params['sigma']['scale'])
         self.distributions['p'] = Beta(self.params['p']['alpha'],self.params['p']['beta'])
         # self.distributions['pi_bug'] = Dirichlet(torch.Tensor(self.params['pi_bug']['epsilon']))
         self.range_dict = {}
         self.lr_range = {}
+
         for param, dist in self.distributions.items():
-            sampler = dist.sample([100])
-            if len(sampler.shape)>1:
-                sampler = sampler[:,0]
-            if 'mu_bug' or 'mu_met' in param:
-                sampler = sampler/10
-            if 'r_met' in param:
-                self.range_dict[param] = (-0.1,torch.tensor(np.sqrt(np.sum(self.met_range**2))/2).float())
-            elif 'r_bug' in param:
-                self.range_dict[param] = (-0.1,torch.tensor(np.sqrt(np.sum(self.bug_range**2))/2).float())
-            elif 'sigma' in param:
-                vals = np.log(1/self.distributions[param].sample([100]))
-                self.range_dict[param] = (vals.min(), vals.max())
-                self.lr_range[param] = torch.abs(vals.max() - vals.min())
+            sampler = dist.sample([1000])
+            if 'sigma' in param or 'r_met' in param or 'r_bug' in param:
+                vals = np.log(1/self.distributions[param].sample([1000]))
+                self.range_dict[param] = (-0.1, np.exp(vals.max()))
+                self.lr_range[param] = torch.abs((torch.mean(vals) + torch.std(vals)) - (torch.mean(vals) - torch.std(vals)))
             elif 'w' in param or 'z' in param or 'alpha' in param:
                 self.range_dict[param] = (-0.1,1.1)
-            elif param == 'pi' or param == 'p' or param == 'lambda_mu':
-                log_sampler = torch.log(sampler)
-                self.lr_range[param] = torch.abs(log_sampler.max() - log_sampler.min())
+                self.lr_range[param] = np.abs(2*(torch.log(torch.tensor(self.params[param]['loc']).float())/self.params[param]['temp']))
+            elif param == 'pi_met' or param == 'p' or param == 'lambda_mu' or param == 'e_met':
+                vals = torch.log(sampler)
+                self.lr_range[param] = torch.abs((torch.mean(vals) + torch.std(vals)) - (torch.mean(vals) - torch.std(vals)))
                 range = sampler.max() - sampler.min()
                 self.range_dict[param] = (sampler.min() - range * 0.1, sampler.max() + range * 0.1)
             else:
+                vals = dist.sample([1000])
                 range = sampler.max() - sampler.min()
                 self.range_dict[param] = (sampler.min() - range * 0.1, sampler.max() + range * 0.1)
-                self.lr_range[param] = torch.abs(sampler.max() - sampler.min())
+                self.lr_range[param] = torch.abs((torch.mean(vals) + torch.std(vals)) - (torch.mean(vals) - torch.std(vals)))
 
-        self.lr_range['r_bug'] = torch.log(torch.tensor(self.r_scale_bug).float())
-        bug_range = 1.1*(np.max(self.microbe_locs,0) - np.min(self.microbe_locs,0))
-        self.lr_range['mu_bug'] = torch.log(torch.tensor(np.sqrt(np.sum(bug_range**2))).float())
-
-        self.lr_range['r_met'] = torch.log(torch.tensor(self.r_scale_met).float())
-        met_range = 1.1*(np.max(self.met_locs,0) - np.min(self.met_locs,0))
-        self.lr_range['mu_met'] = torch.tensor(np.sqrt(np.sum(met_range ** 2))).float()
-
-        vals = Normal(0,500).sample([100])
-        self.lr_range['w'] = torch.abs(vals.max()- vals.min())
-        self.lr_range['z'] = torch.abs(vals.max() - vals.min())
-        self.lr_range['alpha'] = torch.abs(vals.max() - vals.min())
         self.range_dict['beta[1:,:]*alpha'] = self.range_dict['beta']
-
         vals = torch.log(Gamma(0.5, 0.5).sample([100]))
         self.range_dict['lambda_mu'] = (vals.min(), vals.max())
         self.range_dict['C'] = self.range_dict['r_met']
@@ -171,8 +155,8 @@ class Model(nn.Module):
         self.initializations = {}
         self.initializations['beta'] = Normal(0,np.sqrt(self.beta_var))
         self.initializations['alpha'] = Normal(0,0.00001)
-        self.initializations['mu_met'] = MultivariateNormal(torch.zeros(self.embedding_dim),
-                                                            (self.mu_var_met/5)*torch.eye(self.embedding_dim))
+        # self.initializations['mu_met'] = MultivariateNormal(torch.zeros(self.embedding_dim),
+        #                                                     (self.mu_var_met/5)*torch.eye(self.embedding_dim))
         # self.initializations['mu_bug'] = MultivariateNormal(torch.zeros(self.embedding_dim),
         #                                                     (self.mu_var_bug)*torch.eye(self.embedding_dim))
         self.initializations['z'] = Normal(0,1)
@@ -182,7 +166,7 @@ class Model(nn.Module):
         self.p = nn.Parameter(torch.tensor(-2.3).float(), requires_grad=True)
 
         if self.learn_mvar:
-            self.sigma = nn.Parameter(torch.tensor(1.).float(), requires_grad=True)
+            self.sigma = nn.Parameter(torch.log(torch.tensor(1.).float()), requires_grad=True)
         else:
             self.sigma = torch.tensor(1.).float()
         if self.linear:
@@ -192,38 +176,20 @@ class Model(nn.Module):
         self.alpha = nn.Parameter(self.initializations['alpha'].sample([self.L, self.K]), requires_grad=True)
         self.alpha_act = torch.sigmoid(self.alpha)
         pi_init = (1/self.K)*torch.ones(self.K)
-
-        # ixs = [np.random.choice(range(self.microbe_locs.shape[0]), 1, replace = False)[0]]
-        # for l in np.arange(self.L-1):
-        #     choose_from = np.concatenate([np.where(((self.microbe_locs - self.microbe_locs[ixs[i],:])**2).sum(1)>
-        #                                            self.r_scale_bug)[0] for i in np.arange(len(ixs))])
-        #     if len(choose_from == 0):
-        #         choose_from = np.arange(self.microbe_locs.shape[0])
-        #     ixs.append(np.random.choice(choose_from, 1, replace = False)[0])
-        # ix = np.array(ixs)
-        # self.mu_bug = nn.Parameter(torch.Tensor(self.microbe_locs[ix,:]), requires_grad=True)
         self.mu_bug = nn.Parameter(MultivariateNormal(torch.zeros(self.embedding_dim),
                                                       0.001*self.params['mu_bug']['var']*torch.eye(self.embedding_dim)
                                                       ).sample([self.L]), requires_grad=True)
-        # self.mu_bug = nn.Parameter(self.initializations['mu_bug'].sample([self.L]), requires_grad=True)
-        r_temp = self.L_sm*self.r_scale_bug*torch.ones(self.L)
-        # if self.learn_num_bug_clusters:
-        #     l_remove = self.L - self.L_sm
-        #     ix_remove = np.random.choice(range(self.L), int(l_remove), replace=False)
-        #     r_temp[ix_remove,:] = 1e-4
+        r_temp = self.L_sm*(self.r_scale_bug/2)*torch.ones(self.L)
 
-        # self.r_bug = nn.Parameter(torch.log(self.L_sm*r_temp.squeeze()), requires_grad=True)
         self.r_bug = nn.Parameter(torch.log(r_temp.squeeze()), requires_grad=True)
-        # self.w_act = torch.sigmoid(self.w/self.tau_transformer)
 
         ix = np.random.choice(range(self.met_locs.shape[0]), self.K, replace = False)
         self.mu_met = nn.Parameter(torch.Tensor(self.met_locs[ix,:]), requires_grad = True)
-        # self.mu_met = nn.Parameter(self.initializations['mu_met'].sample([self.K]), requires_grad=True)
-        r_temp = self.r_scale_met*torch.ones((self.K)).squeeze()
+        r_temp = (self.r_scale_met/2)*torch.ones((self.K)).squeeze()
 
         if self.learn_num_met_clusters:
             self.e_met = nn.Parameter(torch.log(pi_init.unsqueeze(0)), requires_grad=True)
-            self.pi_met = nn.Parameter(Dirichlet(pi_init.unsqueeze(0)).sample(), requires_grad=True)
+            self.pi_met = nn.Parameter(torch.log(Dirichlet(pi_init.unsqueeze(0)).sample()), requires_grad=True)
             if self.mu_hyper:
                 self.lambda_mu = nn.Parameter(torch.log(Gamma(0.5, 0.5).sample([self.embedding_dim])), requires_grad=True)
                 Lambda = torch.diag(torch.sqrt(torch.exp(self.lambda_mu)))
@@ -237,7 +203,7 @@ class Model(nn.Module):
                 self.G = self.c / (50 * self.g) * np.sqrt(np.sum(self.met_range ** 2))
         else:
             self.e_met = torch.log(pi_init.unsqueeze(0))
-            self.pi_met = nn.Parameter(pi_init.unsqueeze(0), requires_grad=True)
+            self.pi_met = nn.Parameter(torch.log(pi_init.unsqueeze(0)), requires_grad=True)
         self.r_met = nn.Parameter(torch.log(r_temp), requires_grad = True)
 
         if not self.marginalize_z:
@@ -271,25 +237,6 @@ class Model(nn.Module):
 
     def compute_l1_loss(self, w):
         return torch.abs(w).sum()
-
-    def get_w_probs(self):
-        eye = torch.eye(self.embedding_dim).unsqueeze(0).expand(self.L, -1, -1)
-        var = torch.exp(self.r_bug).unsqueeze(-1).unsqueeze(-1).expand(-1,self.embedding_dim,
-                                                                           self.embedding_dim)*eye
-        w_log_probs = Bernoulli(0.1).log_prob(torch.tensor(1).float()) + MultivariateNormal(self.mu_bug.unsqueeze(1).
-                                                                                     expand(-1,self.N_bug,-1),var.unsqueeze(1).expand(
-                -1,self.N_bug,-1,-1)).log_prob(
-            torch.Tensor(self.microbe_locs))
-        w_log_probs[w_log_probs>0] = 0
-        temp = torch.exp(w_log_probs.detach()).T
-        norm = torch.stack([temp.index_fill(-1,i,0).sum(1) for i in torch.arange(temp.shape[1])])
-        # norm = torch.logsumexp(w_log_probs,1)
-        prob =temp/norm.T
-        prob[prob > 1] = 1-(1e-4)
-        return prob
-
-    # def get_alpha_logits(self):
-
 
     def forward(self, x, y):
         alpha_epsilon = self.alpha_temp / 4
@@ -370,7 +317,7 @@ def run_learner(args, device):
 
 
     if 'all' in priors2set:
-        priors2set = ['z','w','alpha','beta','mu_bug','mu_met','r_bug','r_met','pi_met','e_met','sigma','p']
+        priors2set = ['z','w','alpha','beta','mu_bug','mu_met','r_bug','r_met','pi_met','e_met','sigma']
     if args.lb == 0 and 'p' in priors2set:
         priors2set.remove('p')
     if args.lm == 0 and 'e_met' in priors2set:
@@ -383,7 +330,7 @@ def run_learner(args, device):
         priors2set.remove('z')
     if args.lw == 0 and 'w' in priors2set:
         priors2set.remove('w')
-    if args.lw ==0 and ('w' in params2learn or params2learn=='all'):
+    if args.lw ==0 and 'w' in params2learn:
         params2learn.remove('w')
     if args.fix:
         for p in args.fix:
@@ -459,7 +406,7 @@ def run_learner(args, device):
                 compute_loss_for=priors2set,
                 learn_num_bug_clusters=args.lb,learn_num_met_clusters=args.lm, linear = args.linear==1,
                 mu_hyper = args.hyper_mu == 1, r_hyper = args.hyper_r == 1, marginalize_z=args.mz==1,
-                pp = args.p_num, learn_w=args.lw, hard_w = args.hard, data_meas_var = args.meas_var)
+                pp = args.p_num, learn_w=args.lw, hard_w = args.hard, data_meas_var = args.meas_var, beta_var = 16)
     net.initialize(args.seed)
     net.to(device)
 
@@ -513,37 +460,32 @@ def run_learner(args, device):
     train_out_vec = []
 
     lr_dict = {}
-    if args.adjust_lr:
-        matching_dict = {}
-        lr_list = []
-        # beta_range = net.lr_range['beta']
-        ii = 0
-        for name, parameter in net.named_parameters():
-            if name in params2learn or 'all' in params2learn or 'NAM' in name:
-                # range = np.abs(np.max(parameter.detach().view(-1).numpy()) - np.min(parameter.detach().view(-1).numpy()))
-                if name not in net.lr_range.keys():
-                    range = np.abs(np.max(parameter.detach().view(-1).numpy()) - np.min(parameter.detach().view(-1).numpy()))
-                else:
-                    range = net.lr_range[name]
-
-                # if name == 'mu_bug' or name == 'r_bug' or 'w' in name:
-                #     range = range*10
-                matching_dict[name] = ii
-                ii+= 1
-                # if 'bug' in name:
-                #     lr_out = 100*args.lr
-                # else:
-                #     lr_out = args.lr
-                # lr_list.append({'params': parameter, 'lr': lr_out})
-                # lr_dict[name] = [lr_out]
-
+    # if args.adjust_lr:
+    matching_dict = {}
+    lr_list = []
+    # beta_range = net.lr_range['beta']
+    ii = 0
+    for name, parameter in net.named_parameters():
+        if name in params2learn or 'all' in params2learn or 'NAM' in name:
+            # range = np.abs(np.max(parameter.detach().view(-1).numpy()) - np.min(parameter.detach().view(-1).numpy()))
+            if name not in net.lr_range.keys():
+                range = np.abs(np.max(parameter.detach().view(-1).numpy()) - np.min(parameter.detach().view(-1).numpy()))
+            else:
+                range = net.lr_range[name]
+            # if name == 'r_met':
+            #     range = range/100
+            matching_dict[name] = ii
+            ii+= 1
+            if args.adjust_lr:
                 lr_list.append({'params': parameter, 'lr': (args.lr / net.lr_range['beta']) * range})
-                lr_dict[name] = [(args.lr / net.lr_range['beta'].item()) * range.item()]
-        optimizer = optim.RMSprop(lr_list, lr=args.lr)
-    else:
-        optimizer = optim.RMSprop(net.parameters(), lr=args.lr)
-
-    pd.DataFrame(lr_dict).to_csv(path + 'per_param_lr.csv')
+            else:
+                lr_list.append({'params': parameter})
+            lr_dict[name] = [(args.lr / net.lr_range['beta'].item()) * range.item()]
+    optimizer = optim.RMSprop(lr_list, lr=args.lr)
+    # else:
+    #     optimizer = optim.AdaGrad(net.parameters(), lr=args.lr)
+    pd.DataFrame(net.lr_range, index = [0]).to_csv(path + 'param_estimated_sizes.csv')
+    pd.DataFrame(lr_dict).T.to_csv(path + 'per_param_lr.csv')
     if args.schedule_lr:
         scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0, T_mult)
     # print(lr_list)
@@ -569,7 +511,6 @@ def run_learner(args, device):
             if args.schedule_lr:
                 scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
             start = int(checkpoint['epoch'] - 1)
-            # tau_logspace = np.concatenate((tau_logspace,np.logspace(-2, -5, int(iterations / 100))))
             ix = int(checkpoint['epoch'])-1000
             if ix >= len(alpha_tau_logspace):
                 ix = -1
@@ -597,62 +538,35 @@ def run_learner(args, device):
                   gen_w)
 
     x = torch.Tensor(x).to(device)
-    # cluster_targets = np.stack([y[:,np.where(gen_z[:,i]==1)[0][0]] for i in np.arange(gen_z.shape[1])]).T
     loss_dict_vec = {}
     ix = 0
     # grad_dict = {}
     T_i = T_0
     stime = time.time()
     last_epoch = 0
-    tracking_name = list(lr_dict.keys())[0]
-    lr_tracking = lr_dict[tracking_name]
     for epoch in np.arange(start, args.iterations):
         if isinstance(temp_scheduled, str):
             net.alpha_temp = alpha_tau_logspace[ix]
             net.omega_temp = omega_tau_logspace[ix]
             net.omega_temp_2 = omega_tau_2_logspace[ix]
-            # if epoch>1000:
-            #     ix = int(epoch)-1000
-            #     if ix >= len(tau_logspace):
-            #         ix = -1
         optimizer.zero_grad()
         cluster_outputs, loss = net(x, torch.Tensor(y))
         train_out_vec.append(cluster_outputs)
-        loss.backward()
-        loss_vec.append(loss.item())
-
-        for param in net.MAPloss.loss_dict:
-            if param not in loss_dict_vec.keys():
-                loss_dict_vec[param] = [net.MAPloss.loss_dict[param].detach().item()]
-            else:
-                loss_dict_vec[param].append(net.MAPloss.loss_dict[param].detach().item())
-            # if epoch%100==0 and epoch > 0 and ('mu_bug' in params2learn or 'all' in params2learn) and args.sample_mu:
-            #     if (loss_vec[-1] >= np.array(loss_vec[-10:-1])).all():
-            #         val = net.initializations['mu_bug'].sample([net.L])
-            #         setattr(net, 'mu_bug', nn.Parameter(val, requires_grad=True))
-
-        optimizer.step()
-        if args.schedule_lr:
-            scheduler.step()
-
-            ixx = matching_dict[tracking_name]
-            try:
-                lr_curr = scheduler.get_last_lr()[ixx].item()
-            except:
-                lr_curr = scheduler.get_last_lr()[ixx]
-            if lr_curr > lr_tracking[-1]:
-                if epoch > 2000 + last_epoch or epoch == args.iterations - 1:
-                    last_epoch = epoch
-            lr_tracking.append(lr_curr)
-        else:
+        try:
+            loss.backward()
+            loss_vec.append(loss.item())
+            for param in net.MAPloss.loss_dict:
+                if param not in loss_dict_vec.keys():
+                    loss_dict_vec[param] = [net.MAPloss.loss_dict[param].detach().item()]
+                else:
+                    loss_dict_vec[param].append(net.MAPloss.loss_dict[param].detach().item())
+            optimizer.step()
             last_epoch = args.iterations-1
+        except:
+            last_epoch = epoch - 1
 
-        # lr_list = []
-        # if epoch%10 == 0:
+
         for name, parameter in net.named_parameters():
-            # if name in lr_dict.keys():
-            #     ixx = matching_dict[name]
-            #     lr_dict[name].append(scheduler.get_last_lr()[ixx].item())
             if 'NAM' in name or 'lambda_mu' in name or name=='b' or name == 'C':
                 continue
             if name == 'z' or name == 'alpha' or name == 'w':
@@ -677,13 +591,11 @@ def run_learner(args, device):
                 param_dict[args.seed]['w_soft'].append(net.w_soft.clone().detach().numpy())
             param_dict[args.seed]['w_learned'].append(net.w.clone().detach().numpy())
 
+        if epoch % 1000 == 0:
+            print('Epoch ' + str(epoch) + ' Loss: ' + str(loss_vec[-1]))
 
-        # if (epoch%1000 == 0 and epoch != 0):
         if epoch == last_epoch:
             print('Epoch ' + str(epoch) + ' Loss: ' + str(loss_vec[-1]))
-            if args.schedule_lr:
-                print('LR: ' + str(lr_tracking[-2]))
-            print('')
 
             if 'epoch' not in path:
                 path = path + 'epoch' + str(epoch) + '/'
@@ -700,17 +612,6 @@ def run_learner(args, device):
 
             if epoch >= 1:
                 best_mod = np.argmin(loss_vec)
-                mapping = {}
-                # mapping['bug'] = unmix_clusters(true_vals['mu_bug'], param_dict[args.seed]['mu_bug'][last_mod], param_dict[args.seed]['r_bug'][last_mod],
-                #                                 true_vals['bug_locs'])
-                # mapping['bug'] = pd.Series(mapping['bug']).sort_index()
-                # mapping['met'] = unmix_clusters(true_vals['mu_met'], param_dict[args.seed]['mu_met'][last_mod], param_dict[args.seed]['r_met'][last_mod],
-                #                                 true_vals['met_locs'])
-                # mapping['met'] = pd.Series(mapping['met']).sort_index()
-                # mapping['met'] = {i:i for i in np.arange(net.z_act.shape[1])}
-                # mapping['met'] = pd.Series(mapping['met']).sort_index()
-                # mapping['bug'] = {i:i for i in np.arange(net.w_act.shape[1])}
-                # mapping['bug'] = pd.Series(mapping['bug']).sort_index()
 
                 if 'epoch' not in path:
                     path = path + 'epoch' + str(epoch) + '/'
@@ -731,26 +632,26 @@ def run_learner(args, device):
                 plot_xvy(path, net, x, train_out_vec, best_mod, y, gen_z, gen_w, param_dict, args.seed)
                 plot_param_traces(path, param_dict[args.seed], params2learn, true_vals, net, args.seed)
                 fig3, ax3 = plt.subplots(figsize=(8, 8))
-                fig3, ax3 = plot_loss(fig3, ax3, args.seed, np.arange(start, epoch + 1), loss_vec, lowest_loss=None)
+                fig3, ax3 = plot_loss(fig3, ax3, args.seed, np.arange(len(loss_vec)), loss_vec, lowest_loss=None)
                 fig3.tight_layout()
                 fig3.savefig(path_orig + 'loss_seed_' + str(args.seed) + '.pdf')
                 plt.close(fig3)
 
-                if args.schedule_lr:
-                    fig4, ax4 = plt.subplots(1,1, figsize = (8, 8))
-                    ax4.plot(np.arange(len(lr_tracking)), lr_tracking)
-                    ax4.set_title(lr_tracking)
-                    ax4.set_xlabel('iterations')
-                    ax4.set_ylabel('learning rate')
-                    fig4.savefig(path_orig + 'lr_seed_' + str(args.seed) + '.pdf')
-                    plt.close(fig4)
+                # if args.schedule_lr:
+                #     fig4, ax4 = plt.subplots(1,1, figsize = (8, 8))
+                #     ax4.plot(np.arange(len(lr_tracking)), lr_tracking)
+                #     ax4.set_title(lr_tracking)
+                #     ax4.set_xlabel('iterations')
+                #     ax4.set_ylabel('learning rate')
+                #     fig4.savefig(path_orig + 'lr_seed_' + str(args.seed) + '.pdf')
+                #     plt.close(fig4)
 
                 # if net.embedding_dim == 2:
                 #     plot_output_locations(path, net, best_mod, param_dict[args.seed], args.seed, gen_u,
                 #                           type='best_train', plot_zeros=False)
                 #     plot_output_locations(path, net, best_mod, param_dict[args.seed], args.seed, gen_u,
                 #                           type='best_train', plot_zeros=True)
-                plot_output(path, path_orig, best_mod, train_out_vec, y, gen_z, param_dict[args.seed],
+                plot_output(path, best_mod, train_out_vec, y, gen_z, gen_w, param_dict[args.seed],
                                      args.seed, type = 'best_train')
 
                 with open(path_orig + 'seed' + str(args.seed) + '.txt', 'w') as f:
@@ -773,26 +674,26 @@ def run_learner(args, device):
     print('delta loss:' + str(loss_vec[-1] - loss_vec[0]))
 
 if __name__ == "__main__":
-    # torch.autograd.set_detect_anomaly(True)
+    torch.autograd.set_detect_anomaly(True)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     parser = argparse.ArgumentParser()
-    parser.add_argument("-learn", "--learn", help="params to learn", type=str, nargs='+', default = ['mu_bug','r_bug'])
-    parser.add_argument("-lr", "--lr", help="params to learn", type=float, default = 0.001)
+    parser.add_argument("-learn", "--learn", help="params to learn", type=str, nargs='+', default = 'all')
+    parser.add_argument("-lr", "--lr", help="params to learn", type=float, default = 0.3)
     parser.add_argument("-fix", "--fix", help="params to fix", type=str, nargs='+')
-    parser.add_argument("-priors", "--priors", help="priors to set", type=str, nargs='+', default = ['mu_bug','r_bug'])
+    parser.add_argument("-priors", "--priors", help="priors to set", type=str, nargs='+', default = 'all')
     parser.add_argument("-case", "--case", help="case", type=str, default = datetime.date.today().strftime('%m %d %Y').replace(' ','-'))
     # parser.add_argument("-case", "--case", help="case", type=str, default = 'base_case_2-16')
-    parser.add_argument("-N_met", "--N_met", help="N_met", type=int, default = 20)
-    parser.add_argument("-N_bug", "--N_bug", help="N_bug", type=int, default = 20)
+    parser.add_argument("-N_met", "--N_met", help="N_met", type=int, default = 30)
+    parser.add_argument("-N_bug", "--N_bug", help="N_bug", type=int, default = 30)
     parser.add_argument("-L", "--L", help="number of microbe rules", type=int, default = 3)
     parser.add_argument("-K", "--K", help="metab clusters", type=int, default = 3)
     parser.add_argument("-meas_var", "--meas_var", help="measurment variance", type=float, default = 0.1)
-    parser.add_argument("-iterations", "--iterations", help="number of iterations", type=int,default = 20500)
-    parser.add_argument("-seed", "--seed", help = "seed for random start", type = int, default = 2)
+    parser.add_argument("-iterations", "--iterations", help="number of iterations", type=int,default = 30000)
+    parser.add_argument("-seed", "--seed", help = "seed for random start", type = int, default = 0)
     parser.add_argument("-load", "--load", help="0 to not load model, 1 to load model", type=int, default = 0)
     parser.add_argument("-rep_clust", "--rep_clust", help = "whether or not bugs are in more than one cluster", default = 0, type = int)
     parser.add_argument("-lb", "--lb", help = "whether or not to learn bug clusters", type = int, default = 0)
-    parser.add_argument("-lm", "--lm", help = "whether or not to learn metab clusters", type = int, default = 0)
+    parser.add_argument("-lm", "--lm", help = "whether or not to learn metab clusters", type = int, default = 1)
     parser.add_argument("-N_samples", "--N_samples", help="num of samples", type=int, default=1000)
     parser.add_argument("-linear", "--linear", type = int, default = 1)
     parser.add_argument("-nltype", "--nltype", type = str, default = "exp")
@@ -801,16 +702,16 @@ if __name__ == "__main__":
     parser.add_argument("-adjust_lr", "--adjust_lr", type=int, default=1)
     parser.add_argument("-l1", "--l1", type=int, default=0)
     parser.add_argument("-mz","--mz", type = int, default = 1)
-    parser.add_argument("-lw", "--lw", type=int, default=1)
+    parser.add_argument("-lw", "--lw", type=int, default=0)
     parser.add_argument("-adjust_mvar", "--adjust_mvar", type=int, default=0)
     parser.add_argument("-sample_mu", "--sample_mu", type=int, default=0)
     parser.add_argument("-dist_var_perc", "--dist_var_perc", type=float, default=0.5)
-    parser.add_argument("-schedule_lr", "--schedule_lr", type=int, default=1)
+    parser.add_argument("-schedule_lr", "--schedule_lr", type=int, default=0)
     parser.add_argument("-p_num", "--p_num", type=int, default=0)
     parser.add_argument("-p", "--p", type=float, default=0.001)
     parser.add_argument("-learn_mvar", "--learn_mvar", type=int, default=1)
     parser.add_argument("-dim", "--dim", type=int, default=2)
-    parser.add_argument("-hard", "--hard", type=int, default=0)
+    parser.add_argument("-hard", "--hard", type=int, default=1)
     parser.add_argument("-a_tau", "--a_tau", type=float, nargs = '+', default=[-0.5, -3])
     parser.add_argument("-w_tau", "--w_tau", type=float, nargs='+', default=[-0.01, -1])
     parser.add_argument("-w_tau2", "--w_tau2", type=float, nargs='+', default=[-0.01, -1])
