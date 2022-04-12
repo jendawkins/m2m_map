@@ -1,44 +1,22 @@
-import torch
-import torch.nn as nn
-import numpy as np
-from torch.distributions.multivariate_normal import MultivariateNormal
-from torch.distributions.gamma import Gamma
-from torch.distributions.categorical import Categorical
-from torch.distributions.bernoulli import Bernoulli
-from torch.distributions.normal import Normal
 from torch.distributions.dirichlet import Dirichlet
-from torch.distributions.beta import Beta
-from torch.distributions.uniform import Uniform
-import torch.optim as optim
-from sklearn.manifold import MDS
-from sklearn.cluster import KMeans
 from helper import *
-from sklearn.model_selection import KFold
-from scipy.special import logit
 from plot_helper import *
 from MAP_loss import *
 from concrete import *
 import argparse
 import re
 from data_gen import *
-import copy
 import datetime
 import sys
 
 class Model(nn.Module):
     def __init__(self, met_locs, microbe_locs, num_local_clusters = 6, K = 2, beta_var = 16.,
-                 seed = 0, alpha_temp = 1, omega_temp = 1, omega_temp_2 = 1, data_meas_var = 1, L = 3, cluster_per_met_cluster = 1,
+                 seed = 0, alpha_temp = 1, omega_temp = 1, omega_temp_2 = 1, data_meas_var = 1, L = 3,
                  compute_loss_for = ['alpha','beta','w','z','mu_bug','r_bug','pi_bug','mu_met','r_met','pi_met'],
-                 learn_num_met_clusters = False, learn_num_bug_clusters = False, linear = True, mu_hyper = False, r_hyper = False,
-                l1= 1, marginalize_z = True, pp = 1, learn_mvar = True, learn_w = True, sample_a = True, hard_w = True):
+                 learn_num_met_clusters = False, learn_num_bug_clusters = False, linear = True,
+                l1= 1, p_nn = 1, learn_w = True, sample_a = True):
         super(Model, self).__init__()
         self.num_local_clusters = num_local_clusters
-        desired_var = 0.1
-        self.sigma_alpha = ((data_meas_var**2)/desired_var) + 2
-        self.sigma_beta = data_meas_var*(self.sigma_alpha - 1)
-        self.beta_var = beta_var
-        self.mu_var_met = 10*(1/met_locs.shape[1])*np.sum(np.var(met_locs, 0))
-        self.mu_var_bug = 10*(1/microbe_locs.shape[1])*np.sum(np.var(microbe_locs, 0))
         self.compute_loss_for = compute_loss_for
         self.MAPloss = MAPloss(self)
         self.met_locs = met_locs
@@ -51,18 +29,13 @@ class Model(nn.Module):
         self.learn_num_met_clusters = learn_num_met_clusters
         self.learn_num_bug_clusters = learn_num_bug_clusters
         self.linear = linear
-        self.mu_hyper = mu_hyper
-        self.r_hyper = r_hyper
         self.N_met = self.met_locs.shape[0]
         self.N_bug = self.microbe_locs.shape[0]
         self.l1 = l1
-        self.marginalize_z = marginalize_z
         self.learn_w = learn_w
         self.sample_a = sample_a
-        self.pp = pp
-        self.learn_mvar = learn_mvar
+        self.p_nn = p_nn
         self.w_loc = L/self.N_bug
-        self.hard_w = hard_w
 
         self.L, self.K = L, K
         self.L_sm, self.K_sm = L, K
@@ -88,24 +61,24 @@ class Model(nn.Module):
         self.met_range = np.max(self.met_locs,0) - np.min(self.met_locs,0)
         self.Ro = torch.diag(torch.Tensor(self.met_range))
         self.r_scale_met = np.sqrt(np.sum(self.met_range**2)) / (self.K_sm)
-
         self.bug_range = np.max(self.microbe_locs,0) - np.min(self.microbe_locs,0)
         self.r_scale_bug = np.sqrt(np.sum(self.bug_range**2)) / (self.L_sm)
 
         self.params = {}
         self.distributions = {}
         self.params['w'] = {'loc': 1/self.L, 'scale': self.omega_temp}
-        self.params['z'] = {'loc': 1 / self.L, 'scale': self.omega_temp}
-        self.params['beta'] = {'mean': 0, 'scale': np.sqrt(self.beta_var)}
+        self.params['beta'] = {'mean': 0, 'scale': np.sqrt(beta_var)}
         self.params['alpha'] = {'loc': self.alpha_loc, 'temp':self.alpha_temp}
-        self.params['mu_met'] = {'mean': 0, 'var': self.mu_var_met}
-        self.params['mu_bug'] = {'mean': 0, 'var': self.mu_var_bug}
+        self.params['mu_met'] = {'mean': 0, 'var': 10*(1/met_locs.shape[1])*np.sum(np.var(met_locs, 0))}
+        self.params['mu_bug'] = {'mean': 0, 'var': 10*(1/microbe_locs.shape[1])*np.sum(np.var(microbe_locs, 0))}
         self.params['r_bug'] = {'dof': 2, 'scale': self.r_scale_bug}
         self.params['r_met'] = {'dof': 2, 'scale': self.r_scale_met}
         self.params['e_met'] = {'dof': 10, 'scale': 10*self.K}
         self.params['pi_met'] = {'epsilon': [2] * self.K}
         self.params['b'] = {'mean': 0, 'scale': 1}
-        self.params['sigma'] = {'dof': self.sigma_alpha, 'scale': self.sigma_beta}
+        desired_var = 0.1
+        temp = ((data_meas_var**2)/desired_var) + 2
+        self.params['sigma'] = {'dof': temp, 'scale': data_meas_var*(temp - 1)}
         self.params['p'] = {'alpha': 1, 'beta': 5}
         self.distributions['beta'] = Normal(self.params['beta']['mean'], self.params['beta']['scale'])
         self.distributions['alpha'] = BinaryConcrete(self.params['alpha']['loc'], self.params['alpha']['temp'])
@@ -113,13 +86,11 @@ class Model(nn.Module):
         self.distributions['mu_bug'] = MultivariateNormal(torch.zeros(self.embedding_dim), (self.params['mu_bug']['var'])*torch.eye(self.embedding_dim))
         self.distributions['r_bug'] = Gamma(self.params['r_bug']['dof'], self.params['r_bug']['scale'])
         self.distributions['r_met'] = Gamma(self.params['r_met']['dof'], self.params['r_met']['scale'])
-        # self.params['pi_bug'] = {'epsilon': [2]*self.L}
         self.distributions['pi_met'] = Dirichlet(torch.Tensor(self.params['pi_met']['epsilon']))
         self.distributions['e_met'] = Gamma(self.params['e_met']['dof'], self.params['e_met']['scale'])
         self.distributions['b'] = MultivariateNormal(torch.zeros(self.embedding_dim), torch.eye(self.embedding_dim))
         self.distributions['sigma'] = Gamma(self.params['sigma']['dof'], self.params['sigma']['scale'])
         self.distributions['p'] = Beta(self.params['p']['alpha'],self.params['p']['beta'])
-        # self.distributions['pi_bug'] = Dirichlet(torch.Tensor(self.params['pi_bug']['epsilon']))
         self.range_dict = {}
         self.lr_range = {}
 
@@ -153,87 +124,39 @@ class Model(nn.Module):
         torch.manual_seed(seed)
         np.random.seed(seed)
         self.initializations = {}
-        self.initializations['beta'] = Normal(0,np.sqrt(self.beta_var))
-        self.initializations['alpha'] = Normal(0,0.00001)
-        # self.initializations['mu_met'] = MultivariateNormal(torch.zeros(self.embedding_dim),
-        #                                                     (self.mu_var_met/5)*torch.eye(self.embedding_dim))
-        # self.initializations['mu_bug'] = MultivariateNormal(torch.zeros(self.embedding_dim),
-        #                                                     (self.mu_var_bug)*torch.eye(self.embedding_dim))
-        self.initializations['z'] = Normal(0,1)
-        self.initializations['w'] = Normal(0,1)
+        self.p = torch.log(torch.tensor(0.1).float())
+        # self.p = nn.Parameter(torch.tensor(-2.3).float(), requires_grad=True)
 
-        # self.pw = nn.Parameter(torch.tensor(-2.3).float(), requires_grad=True)
-        self.p = nn.Parameter(torch.tensor(-2.3).float(), requires_grad=True)
+        self.sigma = nn.Parameter(torch.log(torch.tensor(1.).float()), requires_grad=True)
 
-        if self.learn_mvar:
-            self.sigma = nn.Parameter(torch.log(torch.tensor(1.).float()), requires_grad=True)
-        else:
-            self.sigma = torch.tensor(1.).float()
         if self.linear:
-            self.beta = nn.Parameter(self.initializations['beta'].sample([self.L+1, self.K]), requires_grad=True)
+            self.beta = nn.Parameter(Normal(0,self.params['beta']['scale']).sample([self.L+1, self.K]), requires_grad=True)
         else:
-            self.beta = nn.Parameter(self.initializations['beta'].sample([self.K]), requires_grad=True)
-        self.alpha = nn.Parameter(self.initializations['alpha'].sample([self.L, self.K]), requires_grad=True)
+            self.beta = nn.Parameter(Normal(0,self.params['beta']['scale']).sample([self.K]), requires_grad=True)
+        self.alpha = nn.Parameter(Normal(0,0.00001).sample([self.L, self.K]), requires_grad=True)
         self.alpha_act = torch.sigmoid(self.alpha)
         pi_init = (1/self.K)*torch.ones(self.K)
         self.mu_bug = nn.Parameter(MultivariateNormal(torch.zeros(self.embedding_dim),
                                                       0.001*self.params['mu_bug']['var']*torch.eye(self.embedding_dim)
                                                       ).sample([self.L]), requires_grad=True)
         r_temp = self.L_sm*(self.r_scale_bug/2)*torch.ones(self.L)
-
         self.r_bug = nn.Parameter(torch.log(r_temp.squeeze()), requires_grad=True)
 
         ix = np.random.choice(range(self.met_locs.shape[0]), self.K, replace = False)
         self.mu_met = nn.Parameter(torch.Tensor(self.met_locs[ix,:]), requires_grad = True)
         r_temp = (self.r_scale_met/2)*torch.ones((self.K)).squeeze()
-
         if self.learn_num_met_clusters:
             self.e_met = nn.Parameter(torch.log(pi_init.unsqueeze(0)), requires_grad=True)
             self.pi_met = nn.Parameter(torch.log(Dirichlet(pi_init.unsqueeze(0)).sample()), requires_grad=True)
-            if self.mu_hyper:
-                self.lambda_mu = nn.Parameter(torch.log(Gamma(0.5, 0.5).sample([self.embedding_dim])), requires_grad=True)
-                Lambda = torch.diag(torch.sqrt(torch.exp(self.lambda_mu)))
-                Bo = Lambda @ self.Ro @ Lambda
-                self.b = nn.Parameter(
-                    MultivariateNormal(torch.zeros(self.embedding_dim), torch.eye(self.embedding_dim)).sample([self.K]), requires_grad=True)
-            if self.r_hyper:
-                self.C = nn.Parameter(torch.Tensor(np.log(self.r_scale_met) * np.ones(self.K)), requires_grad=True)
-                self.c = 1.25 + (self.embedding_dim - 1) / 4
-                self.g = 0.25 + (self.embedding_dim - 1) / 4
-                self.G = self.c / (50 * self.g) * np.sqrt(np.sum(self.met_range ** 2))
         else:
             self.e_met = torch.log(pi_init.unsqueeze(0))
             self.pi_met = nn.Parameter(torch.log(pi_init.unsqueeze(0)), requires_grad=True)
         self.r_met = nn.Parameter(torch.log(r_temp), requires_grad = True)
 
-        if not self.marginalize_z:
-            z_temp = self.initializations['z'].sample([self.met_locs.shape[0], self.K])
-
-            self.z = nn.Parameter(z_temp, requires_grad=True)
-            self.z_act = torch.softmax(self.z/self.omega_temp, 1)
-        else:
-            self.z_act = torch.zeros((self.N_met, self.K))
-
+        self.z_act = torch.zeros((self.N_met, self.K))
         kappa = torch.stack([((self.mu_bug - torch.tensor(self.microbe_locs[m, :])).pow(2)).sum(-1) for m in
                              range(self.microbe_locs.shape[0])])
-
-        if not self.learn_w:
-            self.w_act = torch.sigmoid((self.r_bug - kappa))
-        elif self.learn_w == 1:
-            w_temp = self.initializations['z'].sample([self.microbe_locs.shape[0], self.L])
-            self.w = nn.Parameter(w_temp, requires_grad=True)
-            if self.hard_w:
-                self.w_soft = torch.sigmoid(self.w/self.omega_temp)
-                self.w_act = torch.round(self.w_soft)
-            else:
-                self.w_act = torch.sigmoid(self.w/self.omega_temp)
-        elif self.learn_w > 1:
-            self.w = self.initializations['z'].sample([self.microbe_locs.shape[0], self.L])
-            if self.hard_w:
-                self.w_soft = torch.sigmoid(self.w/self.omega_temp)
-                self.w_act = torch.round(self.w_soft)
-            else:
-                self.w_act = torch.sigmoid(self.w/self.omega_temp)
+        self.w_act = torch.sigmoid((self.r_bug - kappa))
 
     def compute_l1_loss(self, w):
         return torch.abs(w).sum()
@@ -241,36 +164,15 @@ class Model(nn.Module):
     def forward(self, x, y):
         alpha_epsilon = self.alpha_temp / 4
         omega_epsilon = self.omega_temp / 4
-        if not self.learn_w:
-            kappa = torch.stack(
-                [torch.sqrt(((self.mu_bug - torch.tensor(self.microbe_locs[m, :])).pow(2)).sum(-1)) for m in
-                 np.arange(self.microbe_locs.shape[0])])
-            self.w_act = torch.sigmoid((torch.exp(self.r_bug) - kappa)/self.omega_temp)
-        elif self.learn_w == 1:
-            if self.hard_w:
-                self.w_soft, self.w_act = gumbel_sigmoid(self.w, self.omega_temp, omega_epsilon)
-            else:
-                self.w_act = (1-2*omega_epsilon) * torch.sigmoid(self.w/self.omega_temp) + omega_epsilon
-        else:
-            kappa = torch.stack(
-                [torch.sqrt(((self.mu_bug - torch.tensor(self.microbe_locs[m, :])).pow(2)).sum(-1)) for m in
-                 np.arange(self.microbe_locs.shape[0])])
-            if self.learn_w == 2:
-                gamma = torch.sigmoid(kappa/torch.exp(self.r_bug))
-                self.w_soft, self.w_act = gumbel_sigmoid(torch.log(gamma), self.omega_temp, omega_epsilon)
-            if self.learn_w == 3:
-                uu = torch.sigmoid((torch.exp(self.r_bug) - kappa)/self.omega_temp_2)
-                gamma = uu*0.99 + (1-uu)*(1-0.99)
-                self.w_soft, self.w_act = gumbel_sigmoid(torch.log(gamma), self.omega_temp, omega_epsilon)
-
+        kappa = torch.stack(
+            [torch.sqrt(((self.mu_bug - torch.tensor(self.microbe_locs[m, :])).pow(2)).sum(-1)) for m in
+             np.arange(self.microbe_locs.shape[0])])
+        self.w_act = torch.sigmoid((torch.exp(self.r_bug) - kappa)/self.omega_temp)
         g = x@self.w_act.float()
-
         if not self.sample_a:
             self.alpha_act = (1-2*alpha_epsilon)*torch.sigmoid(self.alpha/self.alpha_temp) + alpha_epsilon
         else:
             self.alpha_soft, self.alpha_act = gumbel_sigmoid(self.alpha, self.alpha_temp, alpha_epsilon)
-        if not self.marginalize_z:
-            self.z_act = (1-2*alpha_epsilon)*torch.softmax(self.z / self.alpha_temp, 1) + alpha_epsilon
 
         if self.linear:
             out_clusters = self.beta[0,:] + torch.matmul(g, self.beta[1:,:]*self.alpha_act)
@@ -279,7 +181,6 @@ class Model(nn.Module):
                 self.NAM[k][l][p](g[:,l:l+1]) for p in np.arange(self.pp)],-1).sum(-1)
                                                   for l in np.arange(self.L)],1).sum(1).unsqueeze(1)
                                                   for k in np.arange(self.K)],1)
-
 
         loss = self.MAPloss.compute_loss(out_clusters,y)
 
@@ -293,45 +194,23 @@ class Model(nn.Module):
 
 
 def run_learner(args, device):
-    lr_min = args.lr/50
     if args.linear == 1:
         args.l1 = 0
-
-    # T_0= 100
-    # T_mult = 1
-    T_0= 10
-    T_mult = 2
 
     if 'none' in args.priors:
         args.priors = []
 
     params2learn = args.learn
     priors2set = args.priors
-    temp_scheduled = 'scheduled'
-    temp_transformer = 0.1
     path = 'results_MAP/'
-
     path = path + args.case.replace(' ','_')
     if not os.path.isdir(path):
         os.mkdir(path)
 
-
     if 'all' in priors2set:
-        priors2set = ['z','w','alpha','beta','mu_bug','mu_met','r_bug','r_met','pi_met','e_met','sigma']
-    if args.lb == 0 and 'p' in priors2set:
-        priors2set.remove('p')
-    if args.lm == 0 and 'e_met' in priors2set:
-        priors2set.remove('e_met')
-    if args.linear == 0 and 'beta' in priors2set:
-        priors2set.remove('beta')
-    if args.learn_mvar == 0 and 'sigma' in priors2set:
-        priors2set.remove('sigma')
-    if args.mz and 'z' in priors2set:
-        priors2set.remove('z')
-    if args.lw == 0 and 'w' in priors2set:
-        priors2set.remove('w')
-    if args.lw ==0 and 'w' in params2learn:
-        params2learn.remove('w')
+        priors2set = ['alpha','beta','mu_bug','mu_met','r_bug','r_met','pi_met','e_met','sigma']
+    if 'all' in params2learn:
+        params2learn = ['alpha','beta','mu_bug','mu_met','r_bug','r_met','pi_met','e_met','sigma']
     if args.fix:
         for p in args.fix:
             if p in priors2set:
@@ -344,23 +223,18 @@ def run_learner(args, device):
         if not os.path.isdir(path):
             os.mkdir(path)
 
-
-    info = '-d' + str(args.dim) + '-lr' + str(args.lr) + '-linear'*(args.linear) + '-rep_clust'*args.rep_clust + \
-           '-learn_w'+str(args.lw) +'-adj_lr'*args.adjust_lr + '-samp_mu'*args.sample_mu + \
-           '-adj_mvar'*args.adjust_mvar + '-l1'*(args.l1) + '-'*(1-args.linear) +args.nltype*(1-args.linear) + \
-           '-lm'*args.lm + str(args.lm)*args.lm + '-lb'*args.lb + str(args.lb)*args.lb + \
-           '-sched_lr'*args.schedule_lr + '-dist_var_perc' + str(args.dist_var_perc).replace('.', '_') + \
-           '-learn_mvar'*args.learn_mvar +'-N_bug' + str(args.N_bug) + \
-           '-N_met' + str(args.N_met) + '-L' + str(args.L) + '-K' + str(args.K) + '-atau' + str(args.a_tau).replace('.','_') + \
-            '-wtau' + str(args.w_tau).replace('.', '_') + '-wtau2' + str(args.w_tau2).replace('.', '_') + 'rep_clust'*(args.rep_clust!=0)
+    info = '-d' + str(args.dim) + '-lr' + str(args.lr) + '-linear'*(args.linear) + '-adj_lr'*args.adjust_lr + \
+           '-l1'*(args.l1) + '-'*(1-args.linear) +args.nltype*(1-args.linear) + '-lm'*args.lm + '-lb'*args.lb + \
+           '-dist_var_perc' + str(args.dist_var_perc).replace('.', '_') + '-N_bug' + str(args.N_bug) + \
+           '-N_met' + str(args.N_met) + '-meas_var' + str(args.meas_var).replace('.', '_') + \
+            '-L' + str(args.L) + '-K' + str(args.K) + ('rep_clust' + str(args.rep_clust))*(args.rep_clust!=0) +\
+           '-atau' + str(args.a_tau).replace('.','_') + '-wtau' + str(args.w_tau).replace('.', '_')
 
     path = path + '/' + info +'/'
 
     if not os.path.isdir(path):
         os.mkdir(path)
 
-    # print(params2learn)
-    # print(priors2set)
     x, y, gen_beta, gen_alpha, gen_w, gen_z, gen_bug_locs, gen_met_locs, mu_bug, \
     mu_met, r_bug, r_met, gen_u = generate_synthetic_data(
         N_met = args.N_met, N_bug = args.N_bug, N_met_clusters = args.K,
@@ -391,9 +265,10 @@ def run_learner(args, device):
         gen_alpha = np.vstack((gen_alpha, np.zeros((args.N_bug - args.L - 1, gen_alpha.shape[1]))))
 
     true_vals = {'y':y, 'beta':gen_beta, 'alpha':gen_alpha, 'mu_bug': mu_bug,
-                 'mu_met': mu_met, 'u': gen_u,'w_soft': gen_w,
-                 'r_bug':1.2*r_bug, 'r_met': 1.2*r_met, 'z': gen_z, 'w': gen_w, 'pi_met':np.expand_dims(np.sum(gen_z,0)/np.sum(np.sum(gen_z)),0),
-                 'pi_bug':np.expand_dims(np.sum(gen_w,0)/np.sum(np.sum(gen_w)),0), 'bug_locs': gen_bug_locs, 'met_locs':gen_met_locs,
+                 'mu_met': mu_met, 'u': gen_u,'w_soft': gen_w,'r_bug':1.2*r_bug, 'r_met': 1.2*r_met, 'z': gen_z,
+                 'w': gen_w, 'pi_met':np.expand_dims(np.sum(gen_z,0)/np.sum(np.sum(gen_z)),0),
+                 'pi_bug':np.expand_dims(np.sum(gen_w,0)/np.sum(np.sum(gen_w)),0), 'bug_locs': gen_bug_locs,
+                 'met_locs':gen_met_locs,
                  'e_met': np.expand_dims(np.sum(gen_z,0)/np.sum(np.sum(gen_z)),0),'b': mu_met, 'sigma': args.meas_var,
                  'p': args.p}
 
@@ -405,8 +280,7 @@ def run_learner(args, device):
     net = Model(gen_met_locs, gen_bug_locs, K=args.K, L=args.L,
                 compute_loss_for=priors2set,
                 learn_num_bug_clusters=args.lb,learn_num_met_clusters=args.lm, linear = args.linear==1,
-                mu_hyper = args.hyper_mu == 1, r_hyper = args.hyper_r == 1, marginalize_z=args.mz==1,
-                pp = args.p_num, learn_w=args.lw, hard_w = args.hard, data_meas_var = args.meas_var, beta_var = 16)
+                p_nn = args.p_num, learn_w=args.lw, data_meas_var = args.meas_var, beta_var = 16)
     net.initialize(args.seed)
     net.to(device)
 
@@ -414,23 +288,20 @@ def run_learner(args, device):
         parameter_dict = net.params[param]
         plot_distribution(dist, param, true_val = true_vals[param], ptype = 'prior', path = path, **parameter_dict)
 
-
-    param_dict = {}
     alpha_tau_logspace = np.logspace(args.a_tau[0], args.a_tau[1], args.iterations)
     omega_tau_logspace = np.logspace(args.w_tau[0], args.w_tau[1], args.iterations)
     omega_tau_2_logspace = np.logspace(args.w_tau2[0], args.w_tau[1], args.iterations)
-
     net.alpha_temp = alpha_tau_logspace[0]
     net.omega_temp = omega_tau_logspace[0]
     net.omega_temp_2 = omega_tau_2_logspace[0]
+
+    param_dict = {}
     param_dict[args.seed] = {}
-
-
     start = 0
     for name, parameter in net.named_parameters():
         if 'NAM' in name or 'lambda_mu' in name or name=='b' or name == 'C':
             continue
-        if name not in params2learn and 'all' not in params2learn:
+        if name not in params2learn:
             if name == 'r_bug' or name == 'r_met' or name == 'e_met' or name == 'sigma' or name == 'p' or name == 'pi_met':
                 setattr(net, name, nn.Parameter(torch.tensor(np.log(true_vals[name])).float(), requires_grad=False))
             else:
@@ -441,39 +312,28 @@ def run_learner(args, device):
             parameter = np.exp(parameter.clone().detach().numpy())
         if name == 'pi_met':
             parameter = torch.softmax(parameter.clone().detach(),1).numpy()
-
         if torch.is_tensor(parameter):
             param_dict[args.seed][name] = [parameter.clone().detach().numpy()]
         else:
             param_dict[args.seed][name] = [parameter]
-    if args.mz:
-        param_dict[args.seed]['z'] = [net.z_act.clone().numpy()]
+    param_dict[args.seed]['z'] = [net.z_act.clone().numpy()]
     if 'w' not in param_dict[args.seed].keys():
         param_dict[args.seed]['w'] = [net.w_act.clone().detach().numpy()]
     if net.linear:
         param_dict[args.seed]['beta[1:,:]*alpha'] = [net.beta[1:,:].clone().detach().numpy()*net.alpha_act.clone().detach().numpy()]
-    if args.lw:
-        if args.hard:
-            param_dict[args.seed]['w_soft'] = [net.w_soft.clone().detach().numpy()]
-        param_dict[args.seed]['w_learned'] = [net.w.clone().detach().numpy()]
     loss_vec = []
     train_out_vec = []
 
     lr_dict = {}
-    # if args.adjust_lr:
     matching_dict = {}
     lr_list = []
-    # beta_range = net.lr_range['beta']
     ii = 0
     for name, parameter in net.named_parameters():
         if name in params2learn or 'all' in params2learn or 'NAM' in name:
-            # range = np.abs(np.max(parameter.detach().view(-1).numpy()) - np.min(parameter.detach().view(-1).numpy()))
             if name not in net.lr_range.keys():
                 range = np.abs(np.max(parameter.detach().view(-1).numpy()) - np.min(parameter.detach().view(-1).numpy()))
             else:
                 range = net.lr_range[name]
-            # if name == 'r_met':
-            #     range = range/100
             matching_dict[name] = ii
             ii+= 1
             if args.adjust_lr:
@@ -482,21 +342,11 @@ def run_learner(args, device):
                 lr_list.append({'params': parameter})
             lr_dict[name] = [(args.lr / net.lr_range['beta'].item()) * range.item()]
     optimizer = optim.RMSprop(lr_list, lr=args.lr)
-    # else:
-    #     optimizer = optim.AdaGrad(net.parameters(), lr=args.lr)
     pd.DataFrame(net.lr_range, index = [0]).to_csv(path + 'param_estimated_sizes.csv')
     pd.DataFrame(lr_dict).T.to_csv(path + 'per_param_lr.csv')
-    if args.schedule_lr:
-        scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0, T_mult)
-    # print(lr_list)
-    # optimizer = optim.RMSprop(lr_list, lr=args.lr)
 
-    # scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0, T_mult)
-
-    files = os.listdir(path)
     epochs = re.findall('epoch\d+', ' '.join(os.listdir(path)))
     path_orig = path
-    mvar = []
     if len(epochs)>0:
         if os.path.isfile(path_orig + 'seed' + str(args.seed) + '.txt'):
             with open(path_orig + 'seed' + str(args.seed) + '.txt', 'r') as f:
@@ -508,8 +358,6 @@ def run_learner(args, device):
             checkpoint = torch.load(foldername + 'seed' + str(args.seed) + '_checkpoint.tar')
             net.load_state_dict(checkpoint['model_state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            if args.schedule_lr:
-                scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
             start = int(checkpoint['epoch'] - 1)
             ix = int(checkpoint['epoch'])-1000
             if ix >= len(alpha_tau_logspace):
@@ -541,14 +389,12 @@ def run_learner(args, device):
     loss_dict_vec = {}
     ix = 0
     # grad_dict = {}
-    T_i = T_0
     stime = time.time()
     last_epoch = 0
     for epoch in np.arange(start, args.iterations):
-        if isinstance(temp_scheduled, str):
-            net.alpha_temp = alpha_tau_logspace[ix]
-            net.omega_temp = omega_tau_logspace[ix]
-            net.omega_temp_2 = omega_tau_2_logspace[ix]
+        net.alpha_temp = alpha_tau_logspace[ix]
+        net.omega_temp = omega_tau_logspace[ix]
+        net.omega_temp_2 = omega_tau_2_logspace[ix]
         optimizer.zero_grad()
         cluster_outputs, loss = net(x, torch.Tensor(y))
         train_out_vec.append(cluster_outputs)
@@ -581,22 +427,16 @@ def run_learner(args, device):
                 param_dict[args.seed][name].append(parameter)
         if 'w' not in net.named_parameters():
             param_dict[args.seed]['w'].append(net.w_act.clone().detach().numpy())
-        if args.mz:
-            param_dict[args.seed]['z'].append(net.z_act.clone().numpy())
+        param_dict[args.seed]['z'].append(net.z_act.clone().numpy())
         if net.linear:
             param_dict[args.seed]['beta[1:,:]*alpha'].append(
                 net.beta[1:, :].clone().detach().numpy() * net.alpha_act.clone().detach().numpy())
-        if args.lw:
-            if args.hard:
-                param_dict[args.seed]['w_soft'].append(net.w_soft.clone().detach().numpy())
-            param_dict[args.seed]['w_learned'].append(net.w.clone().detach().numpy())
 
         if epoch % 1000 == 0:
             print('Epoch ' + str(epoch) + ' Loss: ' + str(loss_vec[-1]))
 
         if epoch == last_epoch:
             print('Epoch ' + str(epoch) + ' Loss: ' + str(loss_vec[-1]))
-
             if 'epoch' not in path:
                 path = path + 'epoch' + str(epoch) + '/'
             else:
@@ -637,20 +477,6 @@ def run_learner(args, device):
                 fig3.savefig(path_orig + 'loss_seed_' + str(args.seed) + '.pdf')
                 plt.close(fig3)
 
-                # if args.schedule_lr:
-                #     fig4, ax4 = plt.subplots(1,1, figsize = (8, 8))
-                #     ax4.plot(np.arange(len(lr_tracking)), lr_tracking)
-                #     ax4.set_title(lr_tracking)
-                #     ax4.set_xlabel('iterations')
-                #     ax4.set_ylabel('learning rate')
-                #     fig4.savefig(path_orig + 'lr_seed_' + str(args.seed) + '.pdf')
-                #     plt.close(fig4)
-
-                # if net.embedding_dim == 2:
-                #     plot_output_locations(path, net, best_mod, param_dict[args.seed], args.seed, gen_u,
-                #                           type='best_train', plot_zeros=False)
-                #     plot_output_locations(path, net, best_mod, param_dict[args.seed], args.seed, gen_u,
-                #                           type='best_train', plot_zeros=True)
                 plot_output(path, best_mod, train_out_vec, y, gen_z, gen_w, param_dict[args.seed],
                                      args.seed, type = 'best_train')
 
@@ -665,8 +491,6 @@ def run_learner(args, device):
                 save_dict = {'model_state_dict':net.state_dict(),
                            'optimizer_state_dict':optimizer.state_dict(),
                            'epoch': epoch}
-                if args.schedule_lr:
-                    save_dict['scheduler_state_dict'] = scheduler.state_dict()
                 torch.save(save_dict,
                            path + 'seed' + str(args.seed) + '_checkpoint.tar')
     etime = time.time()
@@ -682,7 +506,6 @@ if __name__ == "__main__":
     parser.add_argument("-fix", "--fix", help="params to fix", type=str, nargs='+')
     parser.add_argument("-priors", "--priors", help="priors to set", type=str, nargs='+', default = 'all')
     parser.add_argument("-case", "--case", help="case", type=str, default = datetime.date.today().strftime('%m %d %Y').replace(' ','-'))
-    # parser.add_argument("-case", "--case", help="case", type=str, default = 'base_case_2-16')
     parser.add_argument("-N_met", "--N_met", help="N_met", type=int, default = 30)
     parser.add_argument("-N_bug", "--N_bug", help="N_bug", type=int, default = 30)
     parser.add_argument("-L", "--L", help="number of microbe rules", type=int, default = 3)
@@ -692,26 +515,16 @@ if __name__ == "__main__":
     parser.add_argument("-seed", "--seed", help = "seed for random start", type = int, default = 0)
     parser.add_argument("-load", "--load", help="0 to not load model, 1 to load model", type=int, default = 0)
     parser.add_argument("-rep_clust", "--rep_clust", help = "whether or not bugs are in more than one cluster", default = 0, type = int)
-    parser.add_argument("-lb", "--lb", help = "whether or not to learn bug clusters", type = int, default = 0)
+    parser.add_argument("-lb", "--lb", help = "whether or not to learn bug clusters", type = int, default = 1)
     parser.add_argument("-lm", "--lm", help = "whether or not to learn metab clusters", type = int, default = 1)
     parser.add_argument("-N_samples", "--N_samples", help="num of samples", type=int, default=1000)
     parser.add_argument("-linear", "--linear", type = int, default = 1)
     parser.add_argument("-nltype", "--nltype", type = str, default = "exp")
-    parser.add_argument("-hyper_r", "--hyper_r", type=int, default=0)
-    parser.add_argument("-hyper_mu","--hyper_mu", type = int, default = 0)
     parser.add_argument("-adjust_lr", "--adjust_lr", type=int, default=1)
     parser.add_argument("-l1", "--l1", type=int, default=0)
-    parser.add_argument("-mz","--mz", type = int, default = 1)
-    parser.add_argument("-lw", "--lw", type=int, default=0)
-    parser.add_argument("-adjust_mvar", "--adjust_mvar", type=int, default=0)
-    parser.add_argument("-sample_mu", "--sample_mu", type=int, default=0)
     parser.add_argument("-dist_var_perc", "--dist_var_perc", type=float, default=0.5)
-    parser.add_argument("-schedule_lr", "--schedule_lr", type=int, default=0)
     parser.add_argument("-p_num", "--p_num", type=int, default=0)
-    parser.add_argument("-p", "--p", type=float, default=0.001)
-    parser.add_argument("-learn_mvar", "--learn_mvar", type=int, default=1)
     parser.add_argument("-dim", "--dim", type=int, default=2)
-    parser.add_argument("-hard", "--hard", type=int, default=1)
     parser.add_argument("-a_tau", "--a_tau", type=float, nargs = '+', default=[-0.5, -3])
     parser.add_argument("-w_tau", "--w_tau", type=float, nargs='+', default=[-0.01, -1])
     parser.add_argument("-w_tau2", "--w_tau2", type=float, nargs='+', default=[-0.01, -1])

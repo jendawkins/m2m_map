@@ -9,7 +9,7 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
                             N_local_clusters=1, state = 3,
                             beta_var = 2, cluster_disparity = 100, meas_var = 0.001,
                             cluster_per_met_cluster = 0, repeat_clusters = 1,embedding_dim = 2,
-                            deterministic = True, linear = False, nl_type = "linear",dist_var_perc = 0.9,
+                            deterministic = True, linear = False, nl_type = "linear",dist_var_frac = 0.9,
                             overlap_frac = 0.5):
     np.random.seed(state)
     choose_from = np.arange(N_met)
@@ -28,8 +28,8 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
 
     # rand = np.random.randint(0,2, size = dist_met.shape)
     # rand = (rand + rand.T)/2
-    dist_met[dist_met == 0] = 10
-    dist_met = dist_met + 10*dist_var_perc
+    dist_met[dist_met == 0] = 1 + dist_var_frac
+    # dist_met = dist_met + 10*dist_var_frac
     np.fill_diagonal(dist_met, 0)
 
     if N_local_clusters <= 1:
@@ -56,13 +56,13 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
         others.pop(i)
         others = np.concatenate(others)
         for met in gp:
-            dist_bug[met, gp] = 2*np.ones((1, len(gp)))
+            dist_bug[met, gp] = np.ones((1, len(gp)))
             dist_bug[gp, met] = dist_bug[met,gp]
     # rand = np.random.randint(0,2, size = dist_bug.shape)
     # rand = (rand + rand.T)/2
     # dist_bug[dist_bug == 0] = 7
-    dist_bug[dist_bug == 0] = 10
-    dist_bug = dist_bug + 10*dist_var_perc
+    dist_bug[dist_bug == 0] = 1 + dist_var_frac
+    # dist_bug = dist_bug + 10*dist_var_frac
     # dist_bug = dist_bug + rand
     np.fill_diagonal(dist_bug, 0)
 
@@ -76,7 +76,6 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
 
     cluster_centers = np.array([[bug_locs[bg, i].sum()/len(bg) for i in np.arange(bug_locs.shape[1])] for bg in bug_gp_ids])
     if N_local_clusters<=1:
-        # w_gen = Num bugs x num bug clusters
         w_gen = np.array([get_one_hot(kk, l=N_bug) for kk in bug_gp_ids]).T
         temp = w_gen
         mu_bug = cluster_centers
@@ -85,17 +84,14 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
                           in
                           range(cluster_centers.shape[0])])
         if cluster_per_met_cluster:
-            # w_gen = Num bugs x Num_bug_clusters x Num_met_clusters
             w_gen = np.stack([w_gen for i in range(N_met_clusters)], axis = -1)
             temp = w_gen[:,:,0]
             mu_bug = np.repeat(mu_bug[:,:,np.newaxis], N_met_clusters, axis = -1)
             r_bug = np.repeat(r_bug[:, np.newaxis], N_met_clusters, axis = -1)
         u = None
     else:
-        # w_gen = Num_clusters x num_local_clusters
         w_gen = np.array([get_one_hot(np.random.choice(range(N_bug_clusters),1), N_bug_clusters) for i in range(N_local_clusters)]).T
         u = np.array([get_one_hot(kk, l = N_bug) for kk in bug_gp_ids]).T
-        # u_ = num_bugs x num_local_clusters
         temp = u
         mu_bug = np.repeat(cluster_centers[np.newaxis,:,:], N_bug_clusters, axis = 0)
         r_bug = np.array([np.max(
@@ -119,11 +115,8 @@ def generate_synthetic_data(N_met = 10, N_bug = 14, N_samples = 200, N_met_clust
         vals = [-5.4,4.1,-4.8,6.7,-4.5,3.9,-3.4,0.8,-5.9,4.9]
         betas[1:,:] = np.diag(vals)
         betas = betas[:N_bug_clusters+1, :N_met_clusters]
-        # betas[-1,0] = 0
         alphas = np.ones((N_bug_clusters, N_met_clusters))
         alphas[-1,0] = -1
-        # cluster_starts = np.arange(200,200+(100*10) + 20, 200)
-        # cluster_ends = np.arange(300,300+(100*10) + 20, 200)
         cluster_starts = [100,350,510,650,870,1000,1200,1400,1600,1800]
         cluster_ends = [250,410,550,770,900,1100,1300,1500,1700,1900]
 
