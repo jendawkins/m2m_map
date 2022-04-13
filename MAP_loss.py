@@ -20,20 +20,17 @@ import numpy as np
 from concrete import *
 from helper import *
 
+# This class calculates the loss
 class MAPloss():
     def __init__(self,net):
         self.net = net
         self.loss_dict = {}
         self.compute_loss_for = net.compute_loss_for
 
+    # computes loss for each parameter specified in priors2set (default is all parameters, but if you want to fix a
+    # parameter value or see if the model learns without a certain prior, you can specify that
     def compute_loss(self, outputs, true):
-        if self.net.marginalize_z:
-            self.loss_dict['y'] = self.marginalized_loss(outputs, true)
-        else:
-            temp_dist = Normal(outputs.T, torch.sqrt(torch.exp(self.net.sigma)))
-            log_probs = torch.stack([temp_dist.log_prob(true[:,j]) for j in np.arange(true.shape[1])])
-            self.loss_dict['y'] = -torch.log((self.net.z_act.unsqueeze(-1).repeat(1,1,log_probs.shape[-1])*
-                                              torch.exp(log_probs)).sum(1)).sum()
+        self.loss_dict['y'] = self.marginalized_loss(outputs, true)
         total_loss = 0
         for param in self.compute_loss_for:
             if len(param)>0:
@@ -45,8 +42,8 @@ class MAPloss():
             print('total loss is nan')
         return total_loss
 
+    # total loss for each value of z
     def marginalized_loss(self, outputs, true):
-
         eye = torch.eye(self.net.embedding_dim).unsqueeze(0).expand(self.net.K, -1, -1)
         var = torch.exp(self.net.r_met).unsqueeze(-1).unsqueeze(-1).expand(-1,self.net.embedding_dim,
                                                                            self.net.embedding_dim)*eye

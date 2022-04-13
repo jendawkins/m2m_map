@@ -9,43 +9,54 @@ from data_gen import *
 import datetime
 import sys
 
+# this model initializes model parameters and contains all the model equations in the overleaf
 class Model(nn.Module):
-    def __init__(self, met_locs, microbe_locs, num_local_clusters = 6, K = 2, beta_var = 16.,
-                 seed = 0, alpha_temp = 1, omega_temp = 1, omega_temp_2 = 1, data_meas_var = 1, L = 3,
+    def __init__(self, met_locs, microbe_locs, K = 2, beta_var = 16.,
+                 seed = 0, alpha_temp = 1, omega_temp = 1, data_meas_var = 1, L = 3,
                  compute_loss_for = ['alpha','beta','w','z','mu_bug','r_bug','pi_bug','mu_met','r_met','pi_met'],
                  learn_num_met_clusters = False, learn_num_bug_clusters = False, linear = True,
                 l1= 1, p_nn = 1, learn_w = True, sample_a = True):
         super(Model, self).__init__()
-        self.num_local_clusters = num_local_clusters
+        # parameters to compute the loss for (default is all parameters, but can set to ignore priors of some parameters)
         self.compute_loss_for = compute_loss_for
+        # class for loss function
         self.MAPloss = MAPloss(self)
+        # metabolite locations (a^{metab})
         self.met_locs = met_locs
+        # microbe locations (a^{taxa})
         self.microbe_locs = microbe_locs
+        # embedding dimension (d)
         self.embedding_dim = met_locs.shape[1]
         self.seed = seed
+        # tau_{\alpha}
         self.alpha_temp = alpha_temp
+        # tau_{\omega}
         self.omega_temp = omega_temp
-        self.omega_temp_2 = omega_temp_2
+        # whether or not to learn the NUMBER of metabolite or bug clusters
         self.learn_num_met_clusters = learn_num_met_clusters
         self.learn_num_bug_clusters = learn_num_bug_clusters
+        # whether or not to run the linear model vs the generalized NAM
         self.linear = linear
+        # number of metabolites
         self.N_met = self.met_locs.shape[0]
+        # number of microbes
         self.N_bug = self.microbe_locs.shape[0]
+        # whether or not to perform l1 regularization on the NAM model parameters (only if non-linear)
         self.l1 = l1
-        self.learn_w = learn_w
+        # whether or not to sample alpha in the forward pass
         self.sample_a = sample_a
+        # number of neural networks per metabolite cluster (default = 1)
         self.p_nn = p_nn
-        self.w_loc = L/self.N_bug
-
+        # number of microbe and metabolite clusters
         self.L, self.K = L, K
-        self.L_sm, self.K_sm = L, K
+        self.L_sm, self.K_sm = L, K # L_sm and K_sm are the estimated number of clusters if we learn the number of clusters
+        # If we learn the number of microbe/metabolite clusters, set L and K to N_bug - 1 and N_met -1 respectively
         if self.learn_num_met_clusters:
             self.K = met_locs.shape[0]-1
-            self.K_sm = K
         if self.learn_num_bug_clusters:
             self.L = microbe_locs.shape[0] - 1
-            self.L_sm = L
 
+        # define the NAM model if not linear
         if not self.linear:
             self.NAM = nn.ModuleList([nn.ModuleList([nn.ModuleList([nn.Sequential(
                 nn.Linear(1, 32, bias = True),
@@ -55,15 +66,18 @@ class Model(nn.Module):
                 nn.Linear(32, 16, bias = True),
                 nn.ELU(),
                 nn.Linear(16,1, bias = True)
-            ) for pp in np.arange(self.pp)]) for l in np.arange(self.L)]) for k in np.arange(self.K)])
+            ) for pp in np.arange(self.p_nn)]) for l in np.arange(self.L)]) for k in np.arange(self.K)])
 
+        # the location parameter for the binaryConcrete distribution on alpha
         self.alpha_loc = 1/(self.L_sm*self.K_sm)
+
+        # Define the range of metabolites and microbes
         self.met_range = np.max(self.met_locs,0) - np.min(self.met_locs,0)
-        self.Ro = torch.diag(torch.Tensor(self.met_range))
         self.r_scale_met = np.sqrt(np.sum(self.met_range**2)) / (self.K_sm)
         self.bug_range = np.max(self.microbe_locs,0) - np.min(self.microbe_locs,0)
         self.r_scale_bug = np.sqrt(np.sum(self.bug_range**2)) / (self.L_sm)
 
+        # Set the prior distributions parameters for each model parameter
         self.params = {}
         self.distributions = {}
         self.params['w'] = {'loc': 1/self.L, 'scale': self.omega_temp}
@@ -75,11 +89,11 @@ class Model(nn.Module):
         self.params['r_met'] = {'dof': 2, 'scale': self.r_scale_met}
         self.params['e_met'] = {'dof': 10, 'scale': 10*self.K}
         self.params['pi_met'] = {'epsilon': [2] * self.K}
-        self.params['b'] = {'mean': 0, 'scale': 1}
         desired_var = 0.1
         temp = ((data_meas_var**2)/desired_var) + 2
         self.params['sigma'] = {'dof': temp, 'scale': data_meas_var*(temp - 1)}
-        self.params['p'] = {'alpha': 1, 'beta': 5}
+
+        # define the prior distributions for each model parameter
         self.distributions['beta'] = Normal(self.params['beta']['mean'], self.params['beta']['scale'])
         self.distributions['alpha'] = BinaryConcrete(self.params['alpha']['loc'], self.params['alpha']['temp'])
         self.distributions['mu_met'] = MultivariateNormal(torch.zeros(self.embedding_dim), (self.params['mu_met']['var'])*torch.eye(self.embedding_dim))
@@ -88,12 +102,12 @@ class Model(nn.Module):
         self.distributions['r_met'] = Gamma(self.params['r_met']['dof'], self.params['r_met']['scale'])
         self.distributions['pi_met'] = Dirichlet(torch.Tensor(self.params['pi_met']['epsilon']))
         self.distributions['e_met'] = Gamma(self.params['e_met']['dof'], self.params['e_met']['scale'])
-        self.distributions['b'] = MultivariateNormal(torch.zeros(self.embedding_dim), torch.eye(self.embedding_dim))
         self.distributions['sigma'] = Gamma(self.params['sigma']['dof'], self.params['sigma']['scale'])
-        self.distributions['p'] = Beta(self.params['p']['alpha'],self.params['p']['beta'])
+
+        # For each model parameter, sample from the prior to get the parameter range, for setting the learning rate
+        # Also, get the expected range of the parameter for plotting purposes
         self.range_dict = {}
         self.lr_range = {}
-
         for param, dist in self.distributions.items():
             sampler = dist.sample([1000])
             if 'sigma' in param or 'r_met' in param or 'r_bug' in param:
@@ -113,66 +127,74 @@ class Model(nn.Module):
                 range = sampler.max() - sampler.min()
                 self.range_dict[param] = (sampler.min() - range * 0.1, sampler.max() + range * 0.1)
                 self.lr_range[param] = torch.abs((torch.mean(vals) + torch.std(vals)) - (torch.mean(vals) - torch.std(vals)))
-
         self.range_dict['beta[1:,:]*alpha'] = self.range_dict['beta']
-        vals = torch.log(Gamma(0.5, 0.5).sample([100]))
-        self.range_dict['lambda_mu'] = (vals.min(), vals.max())
-        self.range_dict['C'] = self.range_dict['r_met']
+
+        # initialize the model
         self.initialize(self.seed)
 
     def initialize(self, seed):
         torch.manual_seed(seed)
         np.random.seed(seed)
-        self.initializations = {}
+        # p is just the parameter for the negative binomial on the number of microbial clusters, if we learn the number of microbial clusters
         self.p = torch.log(torch.tensor(0.1).float())
-        # self.p = nn.Parameter(torch.tensor(-2.3).float(), requires_grad=True)
-
-        self.sigma = nn.Parameter(torch.log(torch.tensor(1.).float()), requires_grad=True)
-
+        self.sigma = nn.Parameter(torch.log(torch.tensor(1.).float()), requires_grad=True) # measurement variance
         if self.linear:
+            # regression weights beta
             self.beta = nn.Parameter(Normal(0,self.params['beta']['scale']).sample([self.L+1, self.K]), requires_grad=True)
         else:
             self.beta = nn.Parameter(Normal(0,self.params['beta']['scale']).sample([self.K]), requires_grad=True)
+        # self.alpha is the un-transformed parameter that is learned by the model; self.alpha_act is the parameter constrained to be
+        # between 0 and 1 that is seen in the model equations
         self.alpha = nn.Parameter(Normal(0,0.00001).sample([self.L, self.K]), requires_grad=True)
         self.alpha_act = torch.sigmoid(self.alpha)
-        pi_init = (1/self.K)*torch.ones(self.K)
+
+        # Initialize the microbe cluster means and radii
         self.mu_bug = nn.Parameter(MultivariateNormal(torch.zeros(self.embedding_dim),
                                                       0.001*self.params['mu_bug']['var']*torch.eye(self.embedding_dim)
                                                       ).sample([self.L]), requires_grad=True)
         r_temp = self.L_sm*(self.r_scale_bug/2)*torch.ones(self.L)
         self.r_bug = nn.Parameter(torch.log(r_temp.squeeze()), requires_grad=True)
 
+        # Initialize the metabolite cluster means and radii
         ix = np.random.choice(range(self.met_locs.shape[0]), self.K, replace = False)
         self.mu_met = nn.Parameter(torch.Tensor(self.met_locs[ix,:]), requires_grad = True)
         r_temp = (self.r_scale_met/2)*torch.ones((self.K)).squeeze()
+        self.r_met = nn.Parameter(torch.log(r_temp), requires_grad=True)
+        # initialize cluster weights
+        pi_init = (1 / self.K) * torch.ones(self.K)
         if self.learn_num_met_clusters:
             self.e_met = nn.Parameter(torch.log(pi_init.unsqueeze(0)), requires_grad=True)
             self.pi_met = nn.Parameter(torch.log(Dirichlet(pi_init.unsqueeze(0)).sample()), requires_grad=True)
         else:
             self.e_met = torch.log(pi_init.unsqueeze(0))
             self.pi_met = nn.Parameter(torch.log(pi_init.unsqueeze(0)), requires_grad=True)
-        self.r_met = nn.Parameter(torch.log(r_temp), requires_grad = True)
 
+        # Initialize z and w (these initialitions arer not used in model, but the parameters are tracked along with the
+        # others so this is the easiest way to initialize)
         self.z_act = torch.zeros((self.N_met, self.K))
         kappa = torch.stack([((self.mu_bug - torch.tensor(self.microbe_locs[m, :])).pow(2)).sum(-1) for m in
                              range(self.microbe_locs.shape[0])])
         self.w_act = torch.sigmoid((self.r_bug - kappa))
 
+    # computing l1 loss
     def compute_l1_loss(self, w):
         return torch.abs(w).sum()
 
+    # Forward function, contains all the model equations except priors (those are in self.MAPlos.compute_loss())
     def forward(self, x, y):
+        # This is just to keep alpha from getting to close to 0 or 1 and causing numerical issues
         alpha_epsilon = self.alpha_temp / 4
-        omega_epsilon = self.omega_temp / 4
         kappa = torch.stack(
             [torch.sqrt(((self.mu_bug - torch.tensor(self.microbe_locs[m, :])).pow(2)).sum(-1)) for m in
              np.arange(self.microbe_locs.shape[0])])
         self.w_act = torch.sigmoid((torch.exp(self.r_bug) - kappa)/self.omega_temp)
         g = x@self.w_act.float()
+        # if sampling alpha in the forward pass
         if not self.sample_a:
             self.alpha_act = (1-2*alpha_epsilon)*torch.sigmoid(self.alpha/self.alpha_temp) + alpha_epsilon
         else:
             self.alpha_soft, self.alpha_act = gumbel_sigmoid(self.alpha, self.alpha_temp, alpha_epsilon)
+
 
         if self.linear:
             out_clusters = self.beta[0,:] + torch.matmul(g, self.beta[1:,:]*self.alpha_act)
@@ -181,9 +203,10 @@ class Model(nn.Module):
                 self.NAM[k][l][p](g[:,l:l+1]) for p in np.arange(self.pp)],-1).sum(-1)
                                                   for l in np.arange(self.L)],1).sum(1).unsqueeze(1)
                                                   for k in np.arange(self.K)],1)
-
+        # compute loss via the priors
         loss = self.MAPloss.compute_loss(out_clusters,y)
 
+        # add l1 regularization to loss
         if not self.linear and self.l1:
             l1_parameters = []
             for parameter in self.NAM.parameters():
@@ -192,7 +215,7 @@ class Model(nn.Module):
             loss += l1
         return out_clusters, loss
 
-
+# runs model for given input arguments
 def run_learner(args, device):
     if args.linear == 1:
         args.l1 = 0
@@ -202,6 +225,7 @@ def run_learner(args, device):
 
     params2learn = args.learn
     priors2set = args.priors
+    # set path for saving results
     path = 'results_MAP/'
     path = path + args.case.replace(' ','_')
     if not os.path.isdir(path):
@@ -211,43 +235,43 @@ def run_learner(args, device):
         priors2set = ['alpha','beta','mu_bug','mu_met','r_bug','r_met','pi_met','e_met','sigma']
     if 'all' in params2learn:
         params2learn = ['alpha','beta','mu_bug','mu_met','r_bug','r_met','pi_met','e_met','sigma']
+    # fix parameters specified in args.fix, and don't learn these parameters
     if args.fix:
         for p in args.fix:
             if p in priors2set:
                 priors2set.remove(p)
             if p in params2learn:
                 params2learn.remove(p)
-
+    # if we fix some parameters, add another folder to path
     if 'all' not in params2learn or 'all' not in priors2set:
         path = path + '/learn_' + '_'.join(params2learn) + '-priors_' + '_'.join(priors2set) + '/'
         if not os.path.isdir(path):
             os.mkdir(path)
 
+    # add all other specified inputs to path to prevent overwriting results
     info = '-d' + str(args.dim) + '-lr' + str(args.lr) + '-linear'*(args.linear) + '-adj_lr'*args.adjust_lr + \
            '-l1'*(args.l1) + '-'*(1-args.linear) +args.nltype*(1-args.linear) + '-lm'*args.lm + '-lb'*args.lb + \
            '-dist_var_perc' + str(args.dist_var_perc).replace('.', '_') + '-N_bug' + str(args.N_bug) + \
            '-N_met' + str(args.N_met) + '-meas_var' + str(args.meas_var).replace('.', '_') + \
             '-L' + str(args.L) + '-K' + str(args.K) + ('rep_clust' + str(args.rep_clust))*(args.rep_clust!=0) +\
            '-atau' + str(args.a_tau).replace('.','_') + '-wtau' + str(args.w_tau).replace('.', '_')
-
     path = path + '/' + info +'/'
-
     if not os.path.isdir(path):
         os.mkdir(path)
 
+    # Generate data by calling data_gen.py and then plot
     x, y, gen_beta, gen_alpha, gen_w, gen_z, gen_bug_locs, gen_met_locs, mu_bug, \
     mu_met, r_bug, r_met, gen_u = generate_synthetic_data(
         N_met = args.N_met, N_bug = args.N_bug, N_met_clusters = args.K,
         N_bug_clusters = args.L,meas_var = args.meas_var,
         repeat_clusters= args.rep_clust, N_samples=args.N_samples, linear = args.linear,
-        nl_type = args.nltype, dist_var_perc=args.dist_var_perc, embedding_dim=args.dim)
-
-    # y = (y - np.mean(y, 0)) / np.std((y - np.mean(y)), 0)
+        nl_type = args.nltype, dist_var_frac=args.dist_var_perc, embedding_dim=args.dim)
     if not args.linear:
         gen_beta = gen_beta[0,:]
     plot_syn_data(path, x, y, gen_z, gen_bug_locs, gen_met_locs, mu_bug,
                   r_bug, mu_met, r_met, gen_u)
 
+    # get true values from data_gen.py to compare to learned parameter values
     if args.lm:
         r_met = np.append(r_met, np.zeros(args.N_met-1-len(r_met)))
         gen_z = np.hstack((gen_z, np.zeros((args.N_met, args.N_met - 1 - args.K))))
@@ -263,7 +287,6 @@ def run_learner(args, device):
         if args.linear:
             gen_beta = np.vstack((gen_beta, np.zeros((args.N_bug - args.L - 1, gen_beta.shape[1]))))
         gen_alpha = np.vstack((gen_alpha, np.zeros((args.N_bug - args.L - 1, gen_alpha.shape[1]))))
-
     true_vals = {'y':y, 'beta':gen_beta, 'alpha':gen_alpha, 'mu_bug': mu_bug,
                  'mu_met': mu_met, 'u': gen_u,'w_soft': gen_w,'r_bug':1.2*r_bug, 'r_met': 1.2*r_met, 'z': gen_z,
                  'w': gen_w, 'pi_met':np.expand_dims(np.sum(gen_z,0)/np.sum(np.sum(gen_z)),0),
@@ -271,12 +294,12 @@ def run_learner(args, device):
                  'met_locs':gen_met_locs,
                  'e_met': np.expand_dims(np.sum(gen_z,0)/np.sum(np.sum(gen_z)),0),'b': mu_met, 'sigma': args.meas_var,
                  'p': args.p}
-
+    # just plotting
     plot_interactions(path, 0, true_vals, '_InitialInteractions')
     if args.linear:
         true_vals['beta[1:,:]*alpha'] = gen_beta[1:,:]*sigmoid(gen_alpha)
 
-    print(priors2set)
+    # Define model and initialize with input seed
     net = Model(gen_met_locs, gen_bug_locs, K=args.K, L=args.L,
                 compute_loss_for=priors2set,
                 learn_num_bug_clusters=args.lb,learn_num_met_clusters=args.lm, linear = args.linear==1,
@@ -284,17 +307,18 @@ def run_learner(args, device):
     net.initialize(args.seed)
     net.to(device)
 
+    # plot prior distributions for all parameters
     for param, dist in net.distributions.items():
         parameter_dict = net.params[param]
         plot_distribution(dist, param, true_val = true_vals[param], ptype = 'prior', path = path, **parameter_dict)
 
+    # Set tau schedules for alpha and omega given inputs
     alpha_tau_logspace = np.logspace(args.a_tau[0], args.a_tau[1], args.iterations)
     omega_tau_logspace = np.logspace(args.w_tau[0], args.w_tau[1], args.iterations)
-    omega_tau_2_logspace = np.logspace(args.w_tau2[0], args.w_tau[1], args.iterations)
     net.alpha_temp = alpha_tau_logspace[0]
     net.omega_temp = omega_tau_logspace[0]
-    net.omega_temp_2 = omega_tau_2_logspace[0]
 
+    # Record initial parameter values (we will also record per epoch for plotting purposes)
     param_dict = {}
     param_dict[args.seed] = {}
     start = 0
@@ -321,11 +345,13 @@ def run_learner(args, device):
         param_dict[args.seed]['w'] = [net.w_act.clone().detach().numpy()]
     if net.linear:
         param_dict[args.seed]['beta[1:,:]*alpha'] = [net.beta[1:,:].clone().detach().numpy()*net.alpha_act.clone().detach().numpy()]
+
     loss_vec = []
     train_out_vec = []
-
     lr_dict = {}
     matching_dict = {}
+
+    # Adjust each parameter's learning rate based on parameter size
     lr_list = []
     ii = 0
     for name, parameter in net.named_parameters():
@@ -341,10 +367,12 @@ def run_learner(args, device):
             else:
                 lr_list.append({'params': parameter})
             lr_dict[name] = [(args.lr / net.lr_range['beta'].item()) * range.item()]
+    # initialize optimizer
     optimizer = optim.RMSprop(lr_list, lr=args.lr)
     pd.DataFrame(net.lr_range, index = [0]).to_csv(path + 'param_estimated_sizes.csv')
     pd.DataFrame(lr_dict).T.to_csv(path + 'per_param_lr.csv')
 
+    # If args.load == 1, load previously trained model and re-start training at the last saved epoch
     epochs = re.findall('epoch\d+', ' '.join(os.listdir(path)))
     path_orig = path
     if len(epochs)>0:
@@ -365,11 +393,9 @@ def run_learner(args, device):
             if ix > -1:
                 net.alpha_temp = alpha_tau_logspace[ix]
                 net.omega_temp = omega_tau_logspace[ix]
-                net.omega_temp_2 = omega_tau_2_logspace[ix]
             else:
                 net.alpha_temp = alpha_tau_logspace[0]
                 net.omega_temp = omega_tau_logspace[0]
-                net.omega_temp_2 = omega_tau_2_logspace[0]
             if args.iterations <= start:
                 print('training complete')
                 sys.exit()
@@ -379,22 +405,22 @@ def run_learner(args, device):
     else:
         print('no model loaded')
 
+    # plot initialized cluster locations & means
     if not os.path.isdir(path + '/epoch0'):
         os.mkdir(path + '/epoch0')
     plot_syn_data(path + '/epoch0/seed' + str(args.seed), x, y, gen_z, gen_bug_locs, gen_met_locs, net.mu_bug.detach().numpy(),
                   torch.exp(net.r_bug.detach()).numpy(), net.mu_met.detach().numpy(), torch.exp(net.r_met.detach()).numpy(),
                   gen_w)
 
+    # Train model over the number of specified input iterations in args.iterations
     x = torch.Tensor(x).to(device)
     loss_dict_vec = {}
     ix = 0
-    # grad_dict = {}
     stime = time.time()
     last_epoch = 0
     for epoch in np.arange(start, args.iterations):
         net.alpha_temp = alpha_tau_logspace[ix]
         net.omega_temp = omega_tau_logspace[ix]
-        net.omega_temp_2 = omega_tau_2_logspace[ix]
         optimizer.zero_grad()
         cluster_outputs, loss = net(x, torch.Tensor(y))
         train_out_vec.append(cluster_outputs)
@@ -411,7 +437,7 @@ def run_learner(args, device):
         except:
             last_epoch = epoch - 1
 
-
+        # keep track of updated parameter values
         for name, parameter in net.named_parameters():
             if 'NAM' in name or 'lambda_mu' in name or name=='b' or name == 'C':
                 continue
@@ -435,6 +461,7 @@ def run_learner(args, device):
         if epoch % 1000 == 0:
             print('Epoch ' + str(epoch) + ' Loss: ' + str(loss_vec[-1]))
 
+        # at the last epoch, plot results
         if epoch == last_epoch:
             print('Epoch ' + str(epoch) + ' Loss: ' + str(loss_vec[-1]))
             if 'epoch' not in path:
@@ -498,6 +525,7 @@ def run_learner(args, device):
     print('delta loss:' + str(loss_vec[-1] - loss_vec[0]))
 
 if __name__ == "__main__":
+    # input arguments
     torch.autograd.set_detect_anomaly(True)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     parser = argparse.ArgumentParser()
@@ -530,9 +558,4 @@ if __name__ == "__main__":
     parser.add_argument("-w_tau2", "--w_tau2", type=float, nargs='+', default=[-0.01, -1])
     args = parser.parse_args()
 
-    # try:
     run_learner(args, device)
-    # except:
-    #     print('FAILURE')
-    #     print(args)
-    #     print('')
